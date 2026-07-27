@@ -2,22 +2,33 @@
 
 **The Software Intelligence Runtime.**
 
-Git gave software memory. Docker gave software portability. Kubernetes gave software orchestration. MCP standardized how AI connects to tools.
+Rune gives every AI persistent understanding of your software.
 
-Rune gives software **persistent, explainable understanding** — so every AI you connect stops rediscovering your codebase from zero and starts asking Rune instead.
+No more re-explaining your architecture every session. No more every assistant independently rediscovering the same routes, components, and dependencies. Connect an AI to Rune, and it already understands your codebase — and can show you why.
 
-Rune doesn't generate code. It doesn't replace your coding assistant. It gives every AI you use a shared, continuously-updated model of your software's architecture, routes, components, and dependencies.
+Rune doesn't generate code. It doesn't replace your coding assistant. It's the layer underneath: the thing every AI you use asks instead of starting from zero.
+
+*Under the hood, Rune continuously builds an evidence-backed understanding of your software and exposes it through MCP — see [How it works](#how-it-works) if you want the internals.*
 
 ---
 
 ## What Rune does
 
-Rune scans your project and builds an **understanding graph** with two distinct layers:
+- **Persistent** — understanding survives past any single session. Scan once, and every AI you connect from then on starts already knowing your software.
+- **Shared** — one understanding, many AI clients. Claude, GPT, Gemini, whatever you're running next month — they all ask the same Rune instance instead of maintaining separate, inconsistent mental models of your code.
+- **Explainable** — nothing Rune tells an AI is a black box. Ask it to justify any claim and it shows the exact source location behind it.
+- **Read-only** — Rune only observes. It never touches your source files.
+
+## How it works
+
+You don't need to think about this to use Rune — it's here for anyone extending or debugging it.
+
+Internally, Rune keeps two distinct layers:
 
 - **Facts** — directly observed things: an import statement, an `app.get(...)` call, a function that returns JSX, a file convention that defines a Next.js route. Every fact records its file, line, and the exact matched source text.
-- **Derived understanding** — conclusions built *from* facts: an architecture summary, a unified API surface across Express and Next.js, a component index, file-level dependency relationships. Every derived conclusion lists exactly which facts it's based on.
+- **Derived understanding** — conclusions built *from* facts: an architecture summary, a unified API surface across Express and Next.js, a component index, file-level dependency relationships. Every conclusion lists exactly which facts it's based on.
 
-Nothing in the derived layer is asserted without a traceable path back to evidence. Call `rune explain <id>` (or the `rune_explain` MCP tool) on anything and get the fact chain behind it.
+Nothing in the derived layer is asserted without a traceable path back to evidence. Call `rune explain <id>` (or the `rune_explain` MCP tool) on anything and get the fact chain behind it. That's the whole trust story: an AI using Rune isn't guessing about your architecture, and neither is Rune.
 
 ## Install
 
@@ -31,8 +42,8 @@ npm install rune
 
 ```bash
 cd your-project
-npx rune init      # sets up .rune/ in your project
-npx rune scan       # builds the understanding graph
+npx rune init      # sets up Rune in your project
+npx rune scan       # builds Rune's understanding of your software
 npx rune serve      # starts an MCP server exposing it to any AI client
 ```
 
@@ -81,13 +92,6 @@ Rune v0.1 is intentionally narrow:
 - **No cross-file route-prefix resolution:** an Express route mounted via `app.use('/api', router)` in one file and defined in another isn't stitched into a single path yet.
 - **Read-only:** Rune never writes to your source files. It only ever writes its own graph to `.rune/graph.json`.
 - **Single-process, stdio MCP transport** in v0.1 — no multi-client daemon yet.
-
-## Why "read-only" and "explainable" are load-bearing, not marketing
-
-Two properties determine whether an AI can trust what Rune tells it:
-
-1. **Read-only** — Rune observes and reasons; it never mutates your code. You stay in control of every change.
-2. **Explainable** — every derived conclusion is traceable to the raw facts it came from. If Rune says "this is a Next.js app router project with 12 API routes," you can ask it to show its work.
 
 ## Roadmap
 
