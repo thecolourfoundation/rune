@@ -33,17 +33,27 @@ export function walkSourceFiles(rootDir, opts = {}) {
       return;
     }
     for (const entry of entries) {
-      if (ignore.has(entry.name) || entry.name.startsWith(".")) {
-        if (!(entry.name === "." || entry.name === "..")) {
-          if (entry.name.startsWith(".") && entry.name !== ".env") continue;
-        }
-      }
-      const full = path.join(dir, entry.name);
+      const name = entry.name;
+
+      // Never traverse into or read dotfiles/dot-directories (.env, .git, .ssh,
+      // editor config, etc). There is no exception for this: a file like
+      // `.env.js` would otherwise pass the CODE_EXTENSIONS check below and have
+      // its contents (including secrets) embedded as evidence snippets in the
+      // understanding graph.
+      if (name.startsWith(".")) continue;
+      if (ignore.has(name)) continue;
+
+      // Dirent reflects the entry itself (lstat semantics), so symlinks are
+      // already reported as neither isDirectory() nor isFile() and are
+      // skipped below. We check explicitly anyway so that stays true even if
+      // the underlying behavior ever changes.
+      if (entry.isSymbolicLink && entry.isSymbolicLink()) continue;
+
+      const full = path.join(dir, name);
       if (entry.isDirectory()) {
-        if (ignore.has(entry.name)) continue;
         walk(full);
       } else if (entry.isFile()) {
-        if (CODE_EXTENSIONS.has(path.extname(entry.name))) {
+        if (CODE_EXTENSIONS.has(path.extname(name))) {
           results.push(full);
         }
       }

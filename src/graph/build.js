@@ -60,5 +60,10 @@ export function writeGraph(rootDir, graph) {
 export function readGraph(rootDir) {
   const filePath = path.join(rootDir, RUNE_DIR, GRAPH_FILENAME);
   if (!fs.existsSync(filePath)) return null;
-  return JSON.parse(fs.readFileSync(filePath, "utf8"));
+  try {
+    return JSON.parse(fs.readFileSync(filePath, "utf8"));
+  } catch (err) {
+    console.error(`[rune] warning: ${filePath} is corrupted or unreadable (${err.message}). Run \`rune scan\` to rebuild it.`);
+    return null;
+  }
 }

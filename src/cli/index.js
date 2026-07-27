@@ -56,11 +56,14 @@ async function cmdInit(rest) {
 
   const gitignorePath = path.join(dir, ".gitignore");
   const runeIgnoreLine = `${RUNE_DIR}/${GRAPH_FILENAME}`;
+  const ignoreBlock = `\n# Rune understanding graph (regenerate with \`rune scan\`)\n${runeIgnoreLine}\n`;
   if (fs.existsSync(gitignorePath)) {
     const content = fs.readFileSync(gitignorePath, "utf8");
     if (!content.includes(runeIgnoreLine)) {
-      fs.appendFileSync(gitignorePath, `\n# Rune understanding graph (regenerate with \`rune scan\`)\n${runeIgnoreLine}\n`);
+      fs.appendFileSync(gitignorePath, ignoreBlock);
     }
+  } else {
+    fs.writeFileSync(gitignorePath, ignoreBlock.trimStart() + "\n");
   }
 
   console.log(`[rune] initialized at ${runeDir}`);

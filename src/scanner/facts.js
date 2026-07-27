@@ -1,4 +1,5 @@
 import path from "node:path";
+import { buildLineIndex, lineNumberAt } from "./lines.js";
 
 let factCounter = 0;
 function nextId(prefix) {
@@ -15,20 +16,24 @@ function nextId(prefix) {
  * used to produce it.
  */
 
-const IMPORT_RE = /import\s+(?:type\s+)?(?:[\w*${}\s,]+?\s+from\s+)?['"]([^'"]+)['"]/g;
+const IMPORT_RE = /import\s+(?:type\s+)?(?:[\w*${}\s,]{0,300}?\s+from\s+)?['"]([^'"]+)['"]/g;
 const REQUIRE_RE = /require\(\s*['"]([^'"]+)['"]\s*\)/g;
 const FUNCTION_COMPONENT_RE = /(?:export\s+(?:default\s+)?)?function\s+([A-Z][A-Za-z0-9_]*)\s*\(/g;
 const ARROW_COMPONENT_RE = /(?:export\s+(?:default\s+)?)?const\s+([A-Z][A-Za-z0-9_]*)\s*=\s*(?:\([^)]*\)|[\w]+)\s*=>/g;
 const CLASS_COMPONENT_RE = /class\s+([A-Z][A-Za-z0-9_]*)\s+extends\s+(?:React\.)?Component/g;
-const JSX_RETURN_RE = /return\s*\(?\s*</;
+// Requires an actual tag shape (letter followed eventually by whitespace, "/",
+// or ">") AND that the "<" isn't immediately preceded by an identifier
+// character — which is what distinguishes JSX `<Item>` from a generic type
+// `Array<Item>`, since both otherwise look identical to a regex.
+const JSX_TAG_RE = /(?<![\w>])<([A-Za-z][\w.]*)[\s/>]/;
 const HOOK_USAGE_RE = /\buse[A-Z][A-Za-z0-9_]*\s*\(/g;
 
 export function extractFileFacts(filePath, content, rootDir) {
   const relPath = path.relative(rootDir, filePath);
   const facts = [];
   const lines = content.split("\n");
-
-  const lineOf = (index) => content.slice(0, index).split("\n").length;
+  const lineOffsets = buildLineIndex(content);
+  const lineOf = (index) => lineNumberAt(lineOffsets, index);
 
   // Imports
   for (const re of [IMPORT_RE, REQUIRE_RE]) {
@@ -53,9 +58,9 @@ export function extractFileFacts(filePath, content, rootDir) {
     let m;
     while ((m = re.exec(content))) {
       const ln = lineOf(m.index);
-      // Heuristic confirmation: does the following ~40 lines contain a JSX-like return?
+      // Heuristic confirmation: does the following ~40 lines contain a real JSX tag?
       const windowText = lines.slice(ln - 1, ln + 40).join("\n");
-      if (JSX_RETURN_RE.test(windowText) || /<[A-Za-z]/.test(windowText)) {
+      if (JSX_TAG_RE.test(windowText)) {
         facts.push({
           id: nextId("component"),
           type: "react_component",

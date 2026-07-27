@@ -33,19 +33,26 @@ export async function startServer(rootDir) {
   const server = new McpServer({ name: "rune", version: "0.1.0" });
 
   for (const tool of buildTools(getGraph)) {
-    server.tool(tool.name, tool.description, tool.inputSchema, async (args) => {
-      const result = await tool.handler(args || {});
-      return {
-        content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
-      };
-    });
+    server.registerTool(
+      tool.name,
+      { title: tool.title, description: tool.description, inputSchema: tool.inputSchema },
+      async (args) => {
+        const result = await tool.handler(args || {});
+        return {
+          content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
+        };
+      }
+    );
   }
 
   // Simple refresh tool so a client can ask Rune to re-scan without shelling out.
-  server.tool(
+  server.registerTool(
     "rune_rescan",
-    "Re-scan the project from disk and refresh Rune's understanding graph. Call this after significant code changes.",
-    { type: "object", properties: {} },
+    {
+      title: "Re-scan project",
+      description: "Re-scan the project from disk and refresh Rune's understanding graph. Call this after significant code changes.",
+      inputSchema: {},
+    },
     async () => {
       cachedGraph = buildGraph(rootDir);
       writeGraph(rootDir, cachedGraph);

@@ -93,6 +93,13 @@ Rune v0.1 is intentionally narrow:
 - **Read-only:** Rune never writes to your source files. It only ever writes its own graph to `.rune/graph.json`.
 - **Single-process, stdio MCP transport** in v0.1 — no multi-client daemon yet.
 
+## Security notes
+
+- Rune **never scans dotfiles or dot-directories** (`.env`, `.env.*.js`, `.git`, `.ssh`, editor configs, etc.), with no exceptions. This is enforced in the scanner and covered by a regression test — a config file with a matching code extension (e.g. `.env.js`) will not have its contents read or embedded as evidence.
+- Symlinks are not traversed, so a symlink pointing outside the project root can't pull external files into the scan.
+- `.rune/graph.json` is excluded from git by `rune init` (it creates `.gitignore` if one doesn't already exist).
+- The graph itself is the only thing Rune writes. If you share `.rune/graph.json` with an AI client, you're sharing everything in it — treat it like any other file that quotes snippets of your source.
+
 ## Roadmap
 
 - AST-based extraction (swap-in replacement for the regex scanner)

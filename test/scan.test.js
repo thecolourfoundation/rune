@@ -38,9 +38,56 @@ test("every derived node is based on at least one traceable fact id", () => {
   }
 });
 
+test("never scans dotfiles like .env.js, even though the extension matches", () => {
+  const graph = buildGraph(FIXTURE_DIR);
+  const leaked = graph.facts.some((f) => JSON.stringify(f).includes("supersecretpassword"));
+  assert.equal(leaked, false, "secret from .env.js leaked into the understanding graph");
+
+  const scannedEnvFile = graph.facts.some((f) => typeof f.file === "string" && f.file.includes(".env"));
+  assert.equal(scannedEnvFile, false, ".env.js should never be scanned");
+});
+
+test("does not misdetect TypeScript generics (Array<Item>) as JSX / a React component", () => {
+  const graph = buildGraph(FIXTURE_DIR);
+  const falsePositive = graph.facts.find(
+    (f) => f.type === "react_component" && f.name === "NotAComponent"
+  );
+  assert.equal(falsePositive, undefined, "generic syntax should not be detected as a JSX-returning component");
+});
+
+test("readGraph returns null instead of throwing on a corrupted graph.json", async () => {
+  const { readGraph, RUNE_DIR, GRAPH_FILENAME } = await import("../src/graph/build.js");
+  const fs = await import("node:fs");
+  const path = await import("node:path");
+  const runeDir = path.join(FIXTURE_DIR, RUNE_DIR);
+  fs.mkdirSync(runeDir, { recursive: true });
+  const graphPath = path.join(runeDir, GRAPH_FILENAME);
+  fs.writeFileSync(graphPath, "{ this is not valid json");
+
+  assert.doesNotThrow(() => {
+    const result = readGraph(FIXTURE_DIR);
+    assert.equal(result, null);
+  });
+
+  fs.rmSync(runeDir, { recursive: true, force: true });
+});
+
+test("line numbers reported for facts match the actual source line", () => {
+  const graph = buildGraph(FIXTURE_DIR);
+  const userCardFacts = graph.facts.filter((f) => f.file === "components/UserCard.jsx");
+  const importFact = userCardFacts.find((f) => f.type === "import" && f.target === "react");
+  assert.ok(importFact);
+  assert.equal(importFact.line, 1);
+
+  const componentFact = userCardFacts.find((f) => f.type === "react_component" && f.name === "UserCard");
+  assert.ok(componentFact);
+  assert.equal(componentFact.line, 3);
+});
+
 test("architecture summary detects express in the fixture project", () => {
   const graph = buildGraph(FIXTURE_DIR);
   const summary = graph.derived.find((d) => d.type === "architecture_summary");
   assert.ok(summary);
   assert.match(summary.description, /Express/);
 });
+

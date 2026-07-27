@@ -1,4 +1,5 @@
 import path from "node:path";
+import { buildLineIndex, lineNumberAt } from "./lines.js";
 
 let counter = 0;
 function nextId() {
@@ -17,7 +18,8 @@ export function extractExpressRoutes(filePath, content, rootDir) {
   const relPath = path.relative(rootDir, filePath);
   const facts = [];
   const lines = content.split("\n");
-  const lineOf = (index) => content.slice(0, index).split("\n").length;
+  const lineOffsets = buildLineIndex(content);
+  const lineOf = (index) => lineNumberAt(lineOffsets, index);
 
   ROUTE_RE.lastIndex = 0;
   let m;
