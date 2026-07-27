@@ -66,10 +66,22 @@ Example MCP client config entry:
 
 | Command | What it does |
 |---|---|
-| `rune init` | Sets up `.rune/` in the current project |
+| `rune init [dir]` | Sets up `.rune/` in the current (or given) project |
 | `rune scan [dir]` | Builds (or rebuilds) the understanding graph |
 | `rune serve [dir]` | Starts the MCP server |
 | `rune explain <id>` | Prints the evidence trail behind any fact or conclusion |
+| `rune --version` | Prints the installed Rune version |
+
+## Configuration
+
+`rune init` writes `.rune/config.json`. The only setting in v0.1 is `ignore` — an array of directory/file names to exclude from scanning, on top of the built-in defaults (`node_modules`, `.git`, `dist`, `build`, `.next`, `coverage`, etc., and all dotfiles unconditionally):
+
+```json
+{
+  "ignore": ["legacy", "vendor"],
+  "version": 1
+}
+```
 
 ## MCP tools exposed
 

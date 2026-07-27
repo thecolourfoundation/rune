@@ -1,3 +1,5 @@
+import { createIdGenerator } from "../scanner/id.js";
+
 /**
  * Derived understanding is always computed FROM facts, and every derived node
  * records which fact ids it is based on (`basedOn`), so a conclusion can be
@@ -5,8 +7,7 @@
  */
 export function deriveUnderstanding(facts, projectInfo) {
   const derived = [];
-  let counter = 0;
-  const nextId = () => `derived_${(++counter).toString(36)}`;
+  const nextId = createIdGenerator();
 
   const components = facts.filter((f) => f.type === "react_component");
   const expressRoutes = facts.filter((f) => f.type === "express_route");
@@ -20,21 +21,24 @@ export function deriveUnderstanding(facts, projectInfo) {
   if (projectInfo.hasExpress) frameworks.push("Express");
   if (projectInfo.hasReact && !projectInfo.hasNext) frameworks.push("React");
 
+  const projectName = projectInfo.pkg?.name;
+  const namePrefix = projectName ? `"${projectName}" — ` : "";
+
   derived.push({
-    id: nextId(),
+    id: nextId("derived"),
     type: "architecture_summary",
     description:
       frameworks.length > 0
-        ? `Detected stack: ${frameworks.join(", ")}. ${components.length} React component(s), ` +
+        ? `${namePrefix}Detected stack: ${frameworks.join(", ")}. ${components.length} React component(s), ` +
           `${expressRoutes.length} Express route(s), ${nextPageRoutes.length} Next.js page route(s), ` +
           `${nextApiRoutes.length} Next.js API route(s) across the scanned source tree.`
-        : `No first-class framework (React/Next.js/Express) confirmed from package.json. ` +
+        : `${namePrefix}No first-class framework (React/Next.js/Express) confirmed from package.json. ` +
           `${components.length} component-like function(s) detected heuristically.`,
     basedOn: [
       ...components.map((c) => c.id),
-      ...expressRoutes.map((c) => c.id),
-      ...nextPageRoutes.map((c) => c.id),
-      ...nextApiRoutes.map((c) => c.id),
+      ...expressRoutes.map((r) => r.id),
+      ...nextPageRoutes.map((r) => r.id),
+      ...nextApiRoutes.map((r) => r.id),
     ],
     confidence: frameworks.length > 0 ? "high" : "medium",
   });
@@ -48,10 +52,10 @@ export function deriveUnderstanding(facts, projectInfo) {
   }
   for (const [file, fileImports] of importsByFile.entries()) {
     derived.push({
-      id: nextId(),
+      id: nextId("derived"),
       type: "file_dependency",
       file,
-      dependsOn: fileImports.map((i) => i.target),
+      dependsOn: [...new Set(fileImports.map((i) => i.target))],
       basedOn: fileImports.map((i) => i.id),
       confidence: "high",
     });
@@ -64,7 +68,7 @@ export function deriveUnderstanding(facts, projectInfo) {
   ];
   if (apiSurface.length > 0) {
     derived.push({
-      id: nextId(),
+      id: nextId("derived"),
       type: "api_surface",
       description: `${apiSurface.length} API endpoint(s) discovered across Express and Next.js route conventions.`,
       routes: apiSurface,
@@ -76,7 +80,7 @@ export function deriveUnderstanding(facts, projectInfo) {
   // --- Component index ---
   if (components.length > 0) {
     derived.push({
-      id: nextId(),
+      id: nextId("derived"),
       type: "component_index",
       description: `${components.length} React component(s) identified by declaration pattern + JSX-return heuristic.`,
       components: components.map((c) => ({ name: c.name, file: c.file, line: c.line, kind: c.kind, factId: c.id })),

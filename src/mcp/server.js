@@ -1,26 +1,19 @@
+import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { readGraph, buildGraph, writeGraph } from "../graph/build.js";
 import { buildTools } from "./tools.js";
+import { getVersion } from "../version.js";
 
 /**
  * Starts an MCP server (stdio transport) exposing the current project's
- * understanding graph as tools any MCP-compatible AI client can call.
+ * understanding as tools any MCP-compatible AI client can call.
  *
- * Requires @modelcontextprotocol/sdk — installed as a dependency of this
- * package. If it isn't resolvable, we fail with a clear message rather than
- * a cryptic stack trace.
+ * This module assumes its dependencies (@modelcontextprotocol/sdk, zod) are
+ * installed — the caller (cli/index.js's cmdServe) is responsible for
+ * catching a missing-dependency error and telling the user to `npm install`,
+ * since that's the one place that can see failures from either package.
  */
 export async function startServer(rootDir) {
-  let McpServer, StdioServerTransport;
-  try {
-    ({ McpServer } = await import("@modelcontextprotocol/sdk/server/mcp.js"));
-    ({ StdioServerTransport } = await import("@modelcontextprotocol/sdk/server/stdio.js"));
-  } catch (err) {
-    console.error(
-      "[rune] @modelcontextprotocol/sdk is not installed. Run `npm install` in this project, then try `rune serve` again."
-    );
-    throw err;
-  }
-
   let cachedGraph = readGraph(rootDir);
   const getGraph = () => {
     if (!cachedGraph) {
@@ -30,18 +23,25 @@ export async function startServer(rootDir) {
     return cachedGraph;
   };
 
-  const server = new McpServer({ name: "rune", version: "0.1.0" });
+  const server = new McpServer({ name: "rune", version: getVersion() });
+
+  // Wraps a tool handler so an unexpected error becomes a structured MCP
+  // tool error (isError: true) that the calling AI can see and react to,
+  // rather than an unhandled rejection with unpredictable behavior.
+  const asToolResult = (handler) => async (args) => {
+    try {
+      const result = await handler(args || {});
+      return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
+    } catch (err) {
+      return { content: [{ type: "text", text: `Error: ${err.message}` }], isError: true };
+    }
+  };
 
   for (const tool of buildTools(getGraph)) {
     server.registerTool(
       tool.name,
       { title: tool.title, description: tool.description, inputSchema: tool.inputSchema },
-      async (args) => {
-        const result = await tool.handler(args || {});
-        return {
-          content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
-        };
-      }
+      asToolResult(tool.handler)
     );
   }
 
@@ -53,18 +53,11 @@ export async function startServer(rootDir) {
       description: "Re-scan the project from disk and refresh Rune's understanding graph. Call this after significant code changes.",
       inputSchema: {},
     },
-    async () => {
+    asToolResult(async () => {
       cachedGraph = buildGraph(rootDir);
       writeGraph(rootDir, cachedGraph);
-      return {
-        content: [
-          {
-            type: "text",
-            text: JSON.stringify({ status: "rescanned", fileCount: cachedGraph.meta.fileCount }, null, 2),
-          },
-        ],
-      };
-    }
+      return { status: "rescanned", fileCount: cachedGraph.meta.fileCount };
+    })
   );
 
   const transport = new StdioServerTransport();

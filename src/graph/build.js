@@ -5,33 +5,58 @@ import { extractFileFacts } from "../scanner/facts.js";
 import { extractExpressRoutes } from "../scanner/express.js";
 import { extractNextRoutes } from "../scanner/nextjs.js";
 import { deriveUnderstanding } from "./derive.js";
+import { createIdGenerator } from "../scanner/id.js";
+import { getVersion } from "../version.js";
 
 export const RUNE_DIR = ".rune";
 export const GRAPH_FILENAME = "graph.json";
+export const CONFIG_FILENAME = "config.json";
+
+/**
+ * Reads .rune/config.json if present (written by `rune init`). Missing or
+ * malformed config is not an error — it just means default (empty) ignores.
+ */
+function readConfig(rootDir) {
+  const configPath = path.join(rootDir, RUNE_DIR, CONFIG_FILENAME);
+  if (!fs.existsSync(configPath)) return { ignore: [] };
+  try {
+    const parsed = JSON.parse(fs.readFileSync(configPath, "utf8"));
+    return { ignore: Array.isArray(parsed.ignore) ? parsed.ignore : [] };
+  } catch (err) {
+    console.error(`[rune] warning: ${configPath} is malformed (${err.message}). Ignoring it for this scan.`);
+    return { ignore: [] };
+  }
+}
 
 export function buildGraph(rootDir) {
+  if (!fs.existsSync(rootDir) || !fs.statSync(rootDir).isDirectory()) {
+    throw new Error(`"${rootDir}" is not a directory. Check the path and try again.`);
+  }
+
+  const config = readConfig(rootDir);
   const projectInfo = detectProjectKind(rootDir);
-  const files = walkSourceFiles(rootDir);
+  const files = walkSourceFiles(rootDir, { ignore: config.ignore });
+  const nextId = createIdGenerator();
 
   const facts = [];
   for (const filePath of files) {
     const content = readFileSafe(filePath);
     if (content == null) continue;
-    facts.push(...extractFileFacts(filePath, content, rootDir));
+    facts.push(...extractFileFacts(filePath, content, rootDir, nextId));
     if (projectInfo.hasExpress) {
-      facts.push(...extractExpressRoutes(filePath, content, rootDir));
+      facts.push(...extractExpressRoutes(filePath, content, rootDir, nextId));
     }
   }
 
   if (projectInfo.hasNext) {
-    facts.push(...extractNextRoutes(rootDir));
+    facts.push(...extractNextRoutes(rootDir, nextId));
   }
 
   const derived = deriveUnderstanding(facts, projectInfo);
 
   const graph = {
     meta: {
-      rune: "0.1.0",
+      rune: getVersion(),
       generatedAt: new Date().toISOString(),
       rootDir,
       fileCount: files.length,

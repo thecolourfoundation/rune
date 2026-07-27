@@ -1,12 +1,6 @@
 import path from "node:path";
 import { buildLineIndex, lineNumberAt } from "./lines.js";
 
-let counter = 0;
-function nextId() {
-  counter += 1;
-  return `route_${counter.toString(36)}`;
-}
-
 const ROUTE_RE = /\b(app|router)\.(get|post|put|delete|patch|use|all)\(\s*['"`]([^'"`]+)['"`]/g;
 
 /**
@@ -14,7 +8,7 @@ const ROUTE_RE = /\b(app|router)\.(get|post|put|delete|patch|use|all)\(\s*['"`](
  * Heuristic: matches `app.<method>('/path', ...)` and `router.<method>('/path', ...)`.
  * Does not resolve router mount prefixes across files in v1 (documented limitation).
  */
-export function extractExpressRoutes(filePath, content, rootDir) {
+export function extractExpressRoutes(filePath, content, rootDir, nextId) {
   const relPath = path.relative(rootDir, filePath);
   const facts = [];
   const lines = content.split("\n");
@@ -28,7 +22,7 @@ export function extractExpressRoutes(filePath, content, rootDir) {
     if (method === "use" && !routePath.startsWith("/")) continue;
     const ln = lineOf(m.index);
     facts.push({
-      id: nextId(),
+      id: nextId("route"),
       type: "express_route",
       method: method.toUpperCase(),
       routePath,

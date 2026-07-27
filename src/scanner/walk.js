@@ -82,7 +82,8 @@ export function detectProjectKind(rootDir) {
   }
   const deps = { ...(pkg.dependencies || {}), ...(pkg.devDependencies || {}) };
 
-  const hasNext = Boolean(deps.next) || fs.existsSync(path.join(rootDir, "next.config.js")) || fs.existsSync(path.join(rootDir, "next.config.ts")) || fs.existsSync(path.join(rootDir, "next.config.mjs"));
+  const NEXT_CONFIG_FILES = ["next.config.js", "next.config.ts", "next.config.mjs"];
+  const hasNext = Boolean(deps.next) || NEXT_CONFIG_FILES.some((f) => fs.existsSync(path.join(rootDir, f)));
   const hasExpress = Boolean(deps.express);
   const hasReact = Boolean(deps.react);
 

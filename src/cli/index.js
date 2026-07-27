@@ -1,16 +1,18 @@
 import path from "node:path";
 import fs from "node:fs";
 import { buildGraph, writeGraph, readGraph, RUNE_DIR, GRAPH_FILENAME } from "../graph/build.js";
+import { getVersion } from "../version.js";
 
 const HELP = `
 Rune — the Software Intelligence Runtime
 
 Usage:
-  rune init             Set up Rune in the current project
-  rune scan [dir]        Build (or rebuild) the understanding graph
-  rune serve [dir]       Start the MCP server so AI clients can query the graph
-  rune explain <id>      Show the evidence trail behind a fact or derived conclusion
-  rune --help            Show this help
+  rune init [dir]     Set up Rune in the current (or given) project
+  rune scan [dir]     Build (or rebuild) the understanding graph
+  rune serve [dir]    Start the MCP server so AI clients can query it
+  rune explain <id>   Show the evidence trail behind a fact or conclusion
+  rune --version      Print the installed Rune version
+  rune --help         Show this help
 `;
 
 export async function runCli(args) {
@@ -22,6 +24,11 @@ export async function runCli(args) {
     case "--help":
     case "help":
       console.log(HELP);
+      return;
+    case "-v":
+    case "--version":
+    case "version":
+      console.log(getVersion());
       return;
     case "init":
       return cmdInit(rest);
@@ -41,8 +48,22 @@ function resolveDir(rest) {
   return path.resolve(rest[0] || process.cwd());
 }
 
+/**
+ * Throws a clear, actionable error if `dir` isn't a real directory, instead
+ * of letting downstream fs calls either silently no-op (readdir on a missing
+ * path returning "0 files" as if the scan succeeded) or, worse, silently
+ * create it (mkdirSync({recursive: true}) on a typo'd path).
+ */
+function assertDirExists(dir) {
+  if (!fs.existsSync(dir) || !fs.statSync(dir).isDirectory()) {
+    throw new Error(`"${dir}" is not a directory. Check the path and try again.`);
+  }
+}
+
 async function cmdInit(rest) {
   const dir = resolveDir(rest);
+  assertDirExists(dir);
+
   const runeDir = path.join(dir, RUNE_DIR);
   fs.mkdirSync(runeDir, { recursive: true });
 
@@ -67,11 +88,14 @@ async function cmdInit(rest) {
   }
 
   console.log(`[rune] initialized at ${runeDir}`);
+  console.log(`[rune] edit ${configPath} to add ignore patterns (e.g. "legacy", "vendor").`);
   console.log(`[rune] run \`rune scan\` to build the understanding graph.`);
 }
 
 async function cmdScan(rest) {
   const dir = resolveDir(rest);
+  assertDirExists(dir);
+
   const start = Date.now();
   const graph = buildGraph(dir);
   const filePath = writeGraph(dir, graph);
@@ -84,13 +108,28 @@ async function cmdScan(rest) {
 
 async function cmdServe(rest) {
   const dir = resolveDir(rest);
+  assertDirExists(dir);
+
   const existing = readGraph(dir);
   if (!existing) {
     console.log(`[rune] no graph found — scanning ${dir} first...`);
     writeGraph(dir, buildGraph(dir));
   }
-  const { startServer } = await import("../mcp/server.js");
-  await startServer(dir);
+
+  try {
+    const { startServer } = await import("../mcp/server.js");
+    await startServer(dir);
+  } catch (err) {
+    // Covers @modelcontextprotocol/sdk, zod, or any other dependency that
+    // hasn't been installed yet — one clear message instead of whichever
+    // raw "Cannot find module" stack trace happened to surface first.
+    if (err?.code === "ERR_MODULE_NOT_FOUND" || /Cannot find (package|module)/i.test(err?.message || "")) {
+      console.error("[rune] a required dependency is missing. Run `npm install` in this project, then try `rune serve` again.");
+      process.exitCode = 1;
+      return;
+    }
+    throw err;
+  }
 }
 
 async function cmdExplain(rest) {
@@ -101,6 +140,8 @@ async function cmdExplain(rest) {
     return;
   }
   const dir = resolveDir(rest.slice(1));
+  assertDirExists(dir);
+
   const graph = readGraph(dir);
   if (!graph) {
     console.log(`[rune] no graph found. Run \`rune scan\` first.`);
@@ -116,7 +157,7 @@ async function cmdExplain(rest) {
     return;
   }
   if (derivedNode) {
-    const basis = (derivedNode.basedOn || [])
+    const evidenceChain = (derivedNode.basedOn || [])
       .map((factId) => graph.facts.find((f) => f.id === factId))
       .filter(Boolean);
     console.log(
@@ -124,7 +165,7 @@ async function cmdExplain(rest) {
         {
           kind: "derived",
           ...derivedNode,
-          evidenceChain: basis,
+          evidenceChain,
         },
         null,
         2
