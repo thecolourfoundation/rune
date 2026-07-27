@@ -1,0 +1,40 @@
+{
+  "name": "rune",
+  "version": "0.1.0",
+  "description": "The Software Intelligence Runtime — persistent, explainable software understanding for any AI.",
+  "type": "module",
+  "bin": {
+    "rune": "./bin/rune.js"
+  },
+  "main": "./src/index.js",
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "scan": "node ./bin/rune.js scan",
+    "serve": "node ./bin/rune.js serve",
+    "test": "node --test test/*.test.js"
+  },
+  "keywords": [
+    "ai",
+    "mcp",
+    "code-understanding",
+    "software-intelligence",
+    "react",
+    "nextjs",
+    "express",
+    "static-analysis"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.0"
+  },
+  "optionalDependencies": {},
+  "files": [
+    "bin",
+    "src",
+    "README.md",
+    "LICENSE"
+  ]
+}
