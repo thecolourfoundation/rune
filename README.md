@@ -112,6 +112,17 @@ Rune v0.1 is intentionally narrow:
 - `.rune/graph.json` is excluded from git by `rune init` (it creates `.gitignore` if one doesn't already exist).
 - The graph itself is the only thing Rune writes. If you share `.rune/graph.json` with an AI client, you're sharing everything in it — treat it like any other file that quotes snippets of your source.
 
+## Verifying the MCP server
+
+The unit test suite (`npm test`) covers scanning and the understanding graph, but doesn't spin up a real MCP client. `scripts/verify-mcp-server.mjs` does: it spawns `rune serve` as a real child process and drives it through the actual JSON-RPC handshake (`initialize` → `notifications/initialized` → `tools/list` → `tools/call`), checks that all expected tools are exposed, and confirms a genuinely invalid call is rejected cleanly rather than crashing the server.
+
+```bash
+npm install
+npm run verify:mcp
+# or against a real project instead of the bundled fixture:
+npm run verify:mcp -- /path/to/your-project
+```
+
 ## Roadmap
 
 - AST-based extraction (swap-in replacement for the regex scanner)

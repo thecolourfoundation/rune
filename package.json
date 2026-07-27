@@ -13,7 +13,8 @@
   "scripts": {
     "scan": "node ./bin/rune.js scan",
     "serve": "node ./bin/rune.js serve",
-    "test": "node --test test/*.test.js"
+    "test": "node --test test/*.test.js",
+    "verify:mcp": "node scripts/verify-mcp-server.mjs"
   },
   "keywords": [
     "ai",
