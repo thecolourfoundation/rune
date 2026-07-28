@@ -4,14 +4,14 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "north-rune"
-version = "0.1.0"
+version = "0.1.1"
 description = "The Software Intelligence Runtime — persistent, explainable software understanding for any AI. Python distribution."
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "MIT" }
 keywords = ["ai", "mcp", "code-understanding", "software-intelligence", "react", "nextjs", "express", "static-analysis"]
 dependencies = [
-    "mcp>=1.0.0",
+    "mcp>=1.0.0,<2.0.0",
 ]
 
 [project.scripts]
