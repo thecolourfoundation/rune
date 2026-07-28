@@ -36,7 +36,7 @@ Nothing in the derived layer is asserted without a traceable path back to eviden
 npm install @north-research/rune
 ```
 
-*A Python distribution exists at [`python/`](python/) with full feature parity (same fact/derived model, same detectors, same MCP tool surface) for teams who'd rather not require Node.js — published as `pip install runesdk` (the CLI command is still `rune`; see [python/README.md](python/README.md)).*
+*A Python distribution exists at [`python/`](python/) with full feature parity (same fact/derived model, same detectors, same MCP tool surface) for teams who'd rather not require Node.js — published as `pip install north-rune` (the CLI command is still `rune`; see [python/README.md](python/README.md)).*
 
 ## Quickstart
 
