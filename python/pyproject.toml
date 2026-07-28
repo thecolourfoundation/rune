@@ -1,0 +1,24 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "rune"
+version = "0.1.0"
+description = "The Software Intelligence Runtime — persistent, explainable software understanding for any AI. Python distribution."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+keywords = ["ai", "mcp", "code-understanding", "software-intelligence", "react", "nextjs", "express", "static-analysis"]
+dependencies = [
+    "mcp>=1.0.0",
+]
+
+[project.scripts]
+rune = "rune.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+rune = []

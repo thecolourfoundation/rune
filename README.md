@@ -36,7 +36,7 @@ Nothing in the derived layer is asserted without a traceable path back to eviden
 npm install rune
 ```
 
-*(A Python distribution — `pip install rune` — mirroring this scanner is on the roadmap; v0.1 ships the JS/TS implementation first.)*
+*A Python distribution exists at [`python/`](python/) with full feature parity (same fact/derived model, same detectors, same MCP tool surface) for teams who'd rather not require Node.js. Its package name is unconfirmed on PyPI — see [python/README.md](python/README.md) before publishing.*
 
 ## Quickstart
 
@@ -126,7 +126,6 @@ npm run verify:mcp -- /path/to/your-project
 ## Roadmap
 
 - AST-based extraction (swap-in replacement for the regex scanner)
-- Python distribution (`pip install rune`)
 - Cross-file route resolution
 - Data-flow tracing between frontend calls and backend routes
 - Incremental re-scan (watch mode) instead of full re-scan
