@@ -1,5 +1,5 @@
 {
-  "name": "rune",
+  "name": "@north-research/rune",
   "version": "0.1.0",
   "description": "The Software Intelligence Runtime — persistent, explainable software understanding for any AI.",
   "type": "module",
@@ -7,6 +7,9 @@
     "rune": "./bin/rune.js"
   },
   "main": "./src/index.js",
+  "publishConfig": {
+    "access": "public"
+  },
   "engines": {
     "node": ">=18"
   },

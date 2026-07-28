@@ -33,18 +33,19 @@ Nothing in the derived layer is asserted without a traceable path back to eviden
 ## Install
 
 ```bash
-npm install rune
+npm install @north-research/rune
 ```
 
-*A Python distribution exists at [`python/`](python/) with full feature parity (same fact/derived model, same detectors, same MCP tool surface) for teams who'd rather not require Node.js. Its package name is unconfirmed on PyPI — see [python/README.md](python/README.md) before publishing.*
+*A Python distribution exists at [`python/`](python/) with full feature parity (same fact/derived model, same detectors, same MCP tool surface) for teams who'd rather not require Node.js — published as `pip install runesdk` (the CLI command is still `rune`; see [python/README.md](python/README.md)).*
 
 ## Quickstart
 
 ```bash
 cd your-project
-npx rune init      # sets up Rune in your project
-npx rune scan       # builds Rune's understanding of your software
-npx rune serve      # starts an MCP server exposing it to any AI client
+npm install -g @north-research/rune   # or: npx -p @north-research/rune rune <command>
+rune init      # sets up Rune in your project
+rune scan       # builds Rune's understanding of your software
+rune serve      # starts an MCP server exposing it to any AI client
 ```
 
 Then point any MCP-compatible client (Claude Desktop, Claude Code, custom agents, etc.) at the `rune serve` process. Every connected AI now shares the same understanding instead of re-deriving it per session.
@@ -56,7 +57,7 @@ Example MCP client config entry:
   "mcpServers": {
     "rune": {
       "command": "npx",
-      "args": ["rune", "serve", "/absolute/path/to/your-project"]
+      "args": ["-p", "@north-research/rune", "rune", "serve", "/absolute/path/to/your-project"]
     }
   }
 }

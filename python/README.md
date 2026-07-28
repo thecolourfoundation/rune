@@ -4,14 +4,14 @@ The same Software Intelligence Runtime as the [JS/TS package](../README.md), pac
 
 Feature parity with the JS version in v0.1: same fact/derived-understanding model, same React/Next.js/Express detection, same MCP tool surface, same documented limitations (heuristic regex-based extraction, no cross-file Express route-prefix resolution, dotfiles/secrets never scanned).
 
-## ⚠️ Package name
+## Package name
 
-This is currently named `rune` in `pyproject.toml` to match the JS package, but the plain `rune` name is very likely already taken or contested on PyPI (there's a cluster of similarly-named packages — `rune-code`, `rune-512`, `runes`, `runeq` — suggesting the exact name isn't free). **Check availability before publishing** and be ready to rename (e.g. `rune-intel`, `software-rune`) if it's taken.
+Published on PyPI as `runesdk` (the bare `rune` name is contested/likely taken — a crowded cluster of `rune-*` packages already exists). The CLI command itself is still `rune` — only the package name you `pip install` differs, same as the JS side installs as `@north-research/rune` but runs as `rune`.
 
 ## Install
 
 ```bash
-pip install rune   # once published — see the naming note above
+pip install runesdk
 ```
 
 For local development from source:

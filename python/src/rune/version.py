@@ -21,7 +21,7 @@ def get_version() -> str:
         from importlib.metadata import version, PackageNotFoundError
 
         try:
-            _cached = version("rune")
+            _cached = version("runesdk")
             return _cached
         except PackageNotFoundError:
             pass
