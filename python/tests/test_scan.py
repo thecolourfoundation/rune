@@ -9,6 +9,7 @@ from rune.graph.build import build_graph, read_graph, RUNE_DIR, GRAPH_FILENAME  
 from rune.graph.derive import derive_understanding  # noqa: E402
 
 FIXTURE_DIR = os.path.join(os.path.dirname(__file__), "fixtures", "sample-express")
+UNDECLARED_EXPRESS_FIXTURE_DIR = os.path.join(os.path.dirname(__file__), "fixtures", "undeclared-express")
 
 
 def _clean_rune_dir():
@@ -146,6 +147,20 @@ class ScanTests(unittest.TestCase):
         self.assertTrue(callable(rune.get_version))
         graph = rune.build_graph(FIXTURE_DIR)
         self.assertGreater(len(graph["facts"]), 0)
+
+    def test_detects_express_routes_even_when_package_json_omits_express(self):
+        # Discovered via real-world testing, not the curated fixture: a real
+        # repo imported express directly without declaring it in
+        # package.json. Route extraction used to be gated entirely behind
+        # the package.json signal, so this silently produced zero route
+        # facts despite real app.get()/app.listen() calls in the source.
+        graph = build_graph(UNDECLARED_EXPRESS_FIXTURE_DIR)
+
+        routes = [f for f in graph["facts"] if f["type"] == "express_route"]
+        self.assertTrue(any(r["method"] == "GET" and r["routePath"] == "/status" for r in routes))
+
+        summary = next((d for d in graph["derived"] if d["type"] == "architecture_summary"), None)
+        self.assertIn("Express", summary["description"])
 
 
 if __name__ == "__main__":

@@ -38,19 +38,23 @@ export function buildGraph(rootDir) {
   const files = walkSourceFiles(rootDir, { ignore: config.ignore });
   const nextId = createIdGenerator();
 
+  // Route extraction always runs, regardless of what package.json declares.
+  // A package.json-only gate here would silently suppress real route facts
+  // whenever a codebase uses a framework without declaring it as a direct
+  // dependency (e.g. a monorepo where the dependency lives in a different
+  // package.json, or code that imports something ahead of updating the
+  // manifest) -- exactly the kind of gap real-world code has and a curated
+  // fixture doesn't. package.json is still read (detectProjectKind) as one
+  // signal among several; deriveUnderstanding decides what to report based
+  // on the actual facts found, not just the manifest.
   const facts = [];
   for (const filePath of files) {
     const content = readFileSafe(filePath);
     if (content == null) continue;
     facts.push(...extractFileFacts(filePath, content, rootDir, nextId));
-    if (projectInfo.hasExpress) {
-      facts.push(...extractExpressRoutes(filePath, content, rootDir, nextId));
-    }
+    facts.push(...extractExpressRoutes(filePath, content, rootDir, nextId));
   }
-
-  if (projectInfo.hasNext) {
-    facts.push(...extractNextRoutes(rootDir, nextId));
-  }
+  facts.push(...extractNextRoutes(rootDir, nextId));
 
   const derived = deriveUnderstanding(facts, projectInfo);
 

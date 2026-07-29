@@ -6,6 +6,7 @@ import { buildGraph } from "../src/graph/build.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const FIXTURE_DIR = path.join(__dirname, "fixtures", "sample-express");
+const UNDECLARED_EXPRESS_FIXTURE_DIR = path.join(__dirname, "fixtures", "undeclared-express");
 
 test("detects express routes from app.* and router.* calls", () => {
   const graph = buildGraph(FIXTURE_DIR);
@@ -154,5 +155,21 @@ test("file_dependency dependsOn has no duplicate entries for repeated imports of
   const dep = derived.find((d) => d.type === "file_dependency" && d.file === "a.js");
   assert.ok(dep);
   assert.deepEqual(dep.dependsOn, ["./util"]);
+});
+
+test("detects Express routes even when package.json doesn't declare express as a dependency", () => {
+  // Discovered via real-world testing (not the curated fixture): a real repo
+  // imported express directly without declaring it in package.json (likely a
+  // monorepo or an out-of-date manifest). Route extraction used to be gated
+  // entirely behind the package.json signal, so this silently produced zero
+  // route facts despite real app.get()/app.listen() calls being right there
+  // in the source.
+  const graph = buildGraph(UNDECLARED_EXPRESS_FIXTURE_DIR);
+
+  const routes = graph.facts.filter((f) => f.type === "express_route");
+  assert.ok(routes.some((r) => r.method === "GET" && r.routePath === "/status"));
+
+  const summary = graph.derived.find((d) => d.type === "architecture_summary");
+  assert.match(summary.description, /Express/);
 });
 

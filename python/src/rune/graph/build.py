@@ -42,17 +42,23 @@ def build_graph(root_dir: str) -> dict:
     files = walk_source_files(root_dir, ignore=config["ignore"])
     next_id = create_id_generator()
 
+    # Route extraction always runs, regardless of what package.json declares.
+    # A package.json-only gate here would silently suppress real route facts
+    # whenever a codebase uses a framework without declaring it as a direct
+    # dependency (e.g. a monorepo where the dependency lives in a different
+    # package.json, or code that imports something ahead of updating the
+    # manifest). package.json is still read (detect_project_kind) as one
+    # signal among several; derive_understanding decides what to report
+    # based on the actual facts found, not just the manifest.
     facts: list[dict] = []
     for file_path in files:
         content = read_file_safe(file_path)
         if content is None:
             continue
         facts.extend(extract_file_facts(file_path, content, root_dir, next_id))
-        if project_info["has_express"]:
-            facts.extend(extract_express_routes(file_path, content, root_dir, next_id))
+        facts.extend(extract_express_routes(file_path, content, root_dir, next_id))
 
-    if project_info["has_next"]:
-        facts.extend(extract_next_routes(root_dir, next_id))
+    facts.extend(extract_next_routes(root_dir, next_id))
 
     derived = derive_understanding(facts, project_info)
 

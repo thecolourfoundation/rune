@@ -1,0 +1,7 @@
+{
+  "name": "undeclared-express-fixture",
+  "version": "1.0.0",
+  "dependencies": {
+    "chalk": "^5.3.0"
+  }
+}

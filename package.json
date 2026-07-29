@@ -1,6 +1,6 @@
 {
   "name": "@pypl100/rune",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "The Software Intelligence Runtime — persistent, explainable software understanding for any AI.",
   "type": "module",
   "bin": {

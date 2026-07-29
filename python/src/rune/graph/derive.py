@@ -18,12 +18,21 @@ def derive_understanding(facts: list[dict], project_info: dict) -> list[dict]:
     imports = [f for f in facts if f["type"] == "import"]
 
     # --- Architecture summary ---
+    # A framework counts as "detected" if EITHER package.json declares it OR
+    # actual evidence of its use was found in the scanned source. Manifest-
+    # only detection silently misses real usage whenever a codebase
+    # imports/uses a framework without (or ahead of) declaring it as a direct
+    # dependency -- common in monorepos, or when a manifest lags the code.
+    has_next_evidence = project_info["has_next"] or bool(next_page_routes) or bool(next_api_routes)
+    has_express_evidence = project_info["has_express"] or bool(express_routes)
+    has_react_evidence = project_info["has_react"] or bool(components)
+
     frameworks = []
-    if project_info["has_next"]:
+    if has_next_evidence:
         frameworks.append("Next.js")
-    if project_info["has_express"]:
+    if has_express_evidence:
         frameworks.append("Express")
-    if project_info["has_react"] and not project_info["has_next"]:
+    if has_react_evidence and not has_next_evidence:
         frameworks.append("React")
 
     project_name = (project_info.get("pkg") or {}).get("name")

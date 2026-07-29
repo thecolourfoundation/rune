@@ -16,10 +16,19 @@ export function deriveUnderstanding(facts, projectInfo) {
   const imports = facts.filter((f) => f.type === "import");
 
   // --- Architecture summary ---
+  // A framework counts as "detected" if EITHER package.json declares it OR
+  // actual evidence of its use was found in the scanned source. Manifest-only
+  // detection silently misses real usage whenever a codebase imports/uses a
+  // framework without (or ahead of) declaring it as a direct dependency --
+  // common in monorepos, or when a manifest just lags behind the code.
+  const hasNextEvidence = projectInfo.hasNext || nextPageRoutes.length > 0 || nextApiRoutes.length > 0;
+  const hasExpressEvidence = projectInfo.hasExpress || expressRoutes.length > 0;
+  const hasReactEvidence = projectInfo.hasReact || components.length > 0;
+
   const frameworks = [];
-  if (projectInfo.hasNext) frameworks.push("Next.js");
-  if (projectInfo.hasExpress) frameworks.push("Express");
-  if (projectInfo.hasReact && !projectInfo.hasNext) frameworks.push("React");
+  if (hasNextEvidence) frameworks.push("Next.js");
+  if (hasExpressEvidence) frameworks.push("Express");
+  if (hasReactEvidence && !hasNextEvidence) frameworks.push("React");
 
   const projectName = projectInfo.pkg?.name;
   const namePrefix = projectName ? `"${projectName}" — ` : "";
