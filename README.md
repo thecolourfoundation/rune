@@ -33,7 +33,7 @@ Nothing in the derived layer is asserted without a traceable path back to eviden
 ## Install
 
 ```bash
-npm install @north-research/rune
+npm install @pypl100/rune
 ```
 
 *A Python distribution exists at [`python/`](python/) with full feature parity (same fact/derived model, same detectors, same MCP tool surface) for teams who'd rather not require Node.js — published as `pip install north-rune` (the CLI command is still `rune`; see [python/README.md](python/README.md)).*
@@ -42,7 +42,7 @@ npm install @north-research/rune
 
 ```bash
 cd your-project
-npm install -g @north-research/rune   # or: npx -p @north-research/rune rune <command>
+npm install -g @pypl100/rune   # or: npx -p @pypl100/rune rune <command>
 rune init      # sets up Rune in your project
 rune scan       # builds Rune's understanding of your software
 rune serve      # starts an MCP server exposing it to any AI client
@@ -57,7 +57,7 @@ Example MCP client config entry:
   "mcpServers": {
     "rune": {
       "command": "npx",
-      "args": ["-p", "@north-research/rune", "rune", "serve", "/absolute/path/to/your-project"]
+      "args": ["-p", "@pypl100/rune", "rune", "serve", "/absolute/path/to/your-project"]
     }
   }
 }

@@ -6,7 +6,7 @@ Feature parity with the JS version in v0.1: same fact/derived-understanding mode
 
 ## Package name
 
-Published on PyPI as `north-rune`. (`rune` itself and short variants like `rune-sdk`/`runesdk` are unavailable — `runesdk` was rejected outright by PyPI as too similar to the existing `runeq` package.) The CLI command itself is still `rune` — only the package name you `pip install` differs, same as the JS side installs as `@north-research/rune` but runs as `rune`.
+Published on PyPI as `north-rune`. (`rune` itself and short variants like `rune-sdk`/`runesdk` are unavailable — `runesdk` was rejected outright by PyPI as too similar to the existing `runeq` package.) The CLI command itself is still `rune` — only the package name you `pip install` differs, same as the JS side installs as `@pypl100/rune` but runs as `rune`.
 
 ## Install
 
