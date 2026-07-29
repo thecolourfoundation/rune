@@ -134,3 +134,7 @@ npm run verify:mcp -- /path/to/your-project
 ## License
 
 MIT
+
+---
+
+If this was useful to you, ETH: `0xbc0979dde621c353737d21f6d7b4eb361f7bc11f`
