@@ -96,3 +96,42 @@ export function readGraph(rootDir) {
     return null;
   }
 }
+
+/**
+ * Returns a getGraph() function that automatically reloads from disk when
+ * the graph file's mtime changes, instead of caching forever. This is what
+ * lets a long-running `rune serve` process stay current when a separate
+ * `rune watch` process (or a manual `rune scan`) updates the graph in the
+ * background -- without needing an explicit rescan call in between.
+ */
+export function createLiveGraphReader(rootDir) {
+  let cached = null;
+  let cachedMtimeMs = null;
+
+  function currentMtime() {
+    try {
+      return fs.statSync(path.join(rootDir, RUNE_DIR, GRAPH_FILENAME)).mtimeMs;
+    } catch {
+      return null;
+    }
+  }
+
+  return function getGraph() {
+    const mtime = currentMtime();
+    const staleOrMissing = !cached || (mtime !== null && mtime !== cachedMtimeMs);
+
+    if (staleOrMissing) {
+      const reread = readGraph(rootDir);
+      if (reread) {
+        cached = reread;
+        cachedMtimeMs = mtime;
+      } else if (!cached) {
+        cached = buildGraph(rootDir);
+        writeGraph(rootDir, cached);
+        cachedMtimeMs = currentMtime();
+      }
+    }
+
+    return cached;
+  };
+}

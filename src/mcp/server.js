@@ -1,6 +1,6 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
-import { readGraph, buildGraph, writeGraph } from "../graph/build.js";
+import { buildGraph, writeGraph, createLiveGraphReader } from "../graph/build.js";
 import { buildTools } from "./tools.js";
 import { getVersion } from "../version.js";
 
@@ -8,20 +8,19 @@ import { getVersion } from "../version.js";
  * Starts an MCP server (stdio transport) exposing the current project's
  * understanding as tools any MCP-compatible AI client can call.
  *
+ * The graph is read via createLiveGraphReader, which automatically reloads
+ * from disk whenever the graph file's mtime changes -- so if a `rune watch`
+ * process is running alongside this server (or someone just runs
+ * `rune scan` manually), connected AI clients see the update on their next
+ * call without needing to restart this server or call rune_rescan.
+ *
  * This module assumes its dependencies (@modelcontextprotocol/sdk, zod) are
  * installed — the caller (cli/index.js's cmdServe) is responsible for
  * catching a missing-dependency error and telling the user to `npm install`,
  * since that's the one place that can see failures from either package.
  */
 export async function startServer(rootDir) {
-  let cachedGraph = readGraph(rootDir);
-  const getGraph = () => {
-    if (!cachedGraph) {
-      cachedGraph = buildGraph(rootDir);
-      writeGraph(rootDir, cachedGraph);
-    }
-    return cachedGraph;
-  };
+  const getGraph = createLiveGraphReader(rootDir);
 
   const server = new McpServer({ name: "rune", version: getVersion() });
 
@@ -45,18 +44,21 @@ export async function startServer(rootDir) {
     );
   }
 
-  // Simple refresh tool so a client can ask Rune to re-scan without shelling out.
+  // Forces an immediate rebuild rather than waiting for the live reader to
+  // notice a change on its own -- useful right after an edit when no
+  // `rune watch` process is running to keep the graph current in the
+  // background.
   server.registerTool(
     "rune_rescan",
     {
       title: "Re-scan project",
-      description: "Re-scan the project from disk and refresh Rune's understanding graph. Call this after significant code changes.",
+      description: "Re-scan the project from disk and refresh Rune's understanding graph. Call this after significant code changes if `rune watch` isn't already running in the background.",
       inputSchema: {},
     },
     asToolResult(async () => {
-      cachedGraph = buildGraph(rootDir);
-      writeGraph(rootDir, cachedGraph);
-      return { status: "rescanned", fileCount: cachedGraph.meta.fileCount };
+      const graph = buildGraph(rootDir);
+      writeGraph(rootDir, graph);
+      return { status: "rescanned", fileCount: graph.meta.fileCount };
     })
   );
 

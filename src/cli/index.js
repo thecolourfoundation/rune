@@ -8,7 +8,8 @@ Rune — the Software Intelligence Runtime
 
 Usage:
   rune init [dir]     Set up Rune in the current (or given) project
-  rune scan [dir]     Build (or rebuild) the understanding graph
+  rune scan [dir]     Build (or rebuild) the understanding graph, once
+  rune watch [dir]    Keep the understanding graph current as files change
   rune serve [dir]    Start the MCP server so AI clients can query it
   rune explain <id>   Show the evidence trail behind a fact or conclusion
   rune --version      Print the installed Rune version
@@ -34,6 +35,8 @@ export async function runCli(args) {
       return cmdInit(rest);
     case "scan":
       return cmdScan(rest);
+    case "watch":
+      return cmdWatch(rest);
     case "serve":
       return cmdServe(rest);
     case "explain":
@@ -104,6 +107,33 @@ async function cmdScan(rest) {
   console.log(`[rune] scanned ${graph.meta.fileCount} file(s) in ${ms}ms`);
   console.log(`[rune] facts: ${graph.facts.length}, derived conclusions: ${graph.derived.length}`);
   console.log(`[rune] graph written to ${filePath}`);
+}
+
+async function cmdWatch(rest) {
+  const dir = resolveDir(rest);
+  assertDirExists(dir);
+
+  const { startWatch } = await import("../watch/index.js");
+
+  console.log(`[rune] watching ${dir} for changes (Ctrl+C to stop)...`);
+  const handle = startWatch(dir, {
+    onRebuild: ({ ok, graph, error, reason }) => {
+      if (ok) {
+        console.log(`[rune] rescanned (${reason}) — ${graph.facts.length} facts, ${graph.derived.length} derived`);
+      } else {
+        console.error(`[rune] rescan failed (${reason}): ${error.message}`);
+      }
+    },
+  });
+
+  process.on("SIGINT", () => {
+    console.log("\n[rune] stopping watch mode.");
+    handle.stop();
+    process.exit(0);
+  });
+
+  // Keep the process alive until Ctrl+C.
+  await new Promise(() => {});
 }
 
 async function cmdServe(rest) {

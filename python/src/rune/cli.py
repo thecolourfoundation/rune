@@ -67,6 +67,39 @@ def cmd_scan(args: argparse.Namespace) -> None:
     print(f"[rune] graph written to {file_path}")
 
 
+def cmd_watch(args: argparse.Namespace) -> None:
+    import signal
+    import threading
+
+    directory = _resolve_dir(args.dir)
+    _assert_dir_exists(directory)
+
+    from .watch import start_watch
+
+    print(f"[rune] watching {directory} for changes (Ctrl+C to stop)...")
+
+    def on_rebuild(result):
+        if result["ok"]:
+            graph = result["graph"]
+            print(f"[rune] rescanned ({result['reason']}) — {len(graph['facts'])} facts, {len(graph['derived'])} derived")
+        else:
+            print(f"[rune] rescan failed ({result['reason']}): {result['error']}", file=sys.stderr)
+
+    handle = start_watch(directory, on_rebuild=on_rebuild)
+    stop_flag = threading.Event()
+
+    def _on_sigint(signum, frame):
+        print("\n[rune] stopping watch mode.")
+        stop_flag.set()
+
+    signal.signal(signal.SIGINT, _on_sigint)
+
+    while not stop_flag.is_set():
+        stop_flag.wait(0.2)
+
+    handle.stop()
+
+
 def cmd_serve(args: argparse.Namespace) -> None:
     directory = _resolve_dir(args.dir)
     _assert_dir_exists(directory)
@@ -123,9 +156,13 @@ def build_parser() -> argparse.ArgumentParser:
     p_init.add_argument("dir", nargs="?", default=None)
     p_init.set_defaults(func=cmd_init)
 
-    p_scan = subparsers.add_parser("scan", help="Build (or rebuild) the understanding graph")
+    p_scan = subparsers.add_parser("scan", help="Build (or rebuild) the understanding graph, once")
     p_scan.add_argument("dir", nargs="?", default=None)
     p_scan.set_defaults(func=cmd_scan)
+
+    p_watch = subparsers.add_parser("watch", help="Keep the understanding graph current as files change")
+    p_watch.add_argument("dir", nargs="?", default=None)
+    p_watch.set_defaults(func=cmd_watch)
 
     p_serve = subparsers.add_parser("serve", help="Start the MCP server so AI clients can query it")
     p_serve.add_argument("dir", nargs="?", default=None)

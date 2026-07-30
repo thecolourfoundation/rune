@@ -2,11 +2,11 @@
 
 **The Software Intelligence Runtime.**
 
-Rune gives every AI persistent understanding of your software.
+Cursor, Codex, and Claude Code write your code — one session at a time. Open a session, they read your files cold, reason about them, make changes, and when the session ends, whatever they figured out is gone. Next session, same cold start.
 
-No more re-explaining your architecture every session. No more every assistant independently rediscovering the same routes, components, and dependencies. Connect an AI to Rune, and it already understands your codebase — and can show you why.
+Rune doesn't write code. It's the thing that runs underneath all of them, continuously — watching your codebase, keeping a standing, evidence-backed understanding of it current, so every session (yours or an agent's) starts already knowing the architecture instead of re-deriving it from scratch.
 
-Rune doesn't generate code. It doesn't replace your coding assistant. It's the layer underneath: the thing every AI you use asks instead of starting from zero.
+No more re-explaining your routes and components every time. No more every assistant independently rediscovering the same things. Connect an AI to Rune, and it already understands your codebase — and can show you exactly why.
 
 *Under the hood, Rune continuously builds an evidence-backed understanding of your software and exposes it through MCP — see [How it works](#how-it-works) if you want the internals.*
 
@@ -14,10 +14,11 @@ Rune doesn't generate code. It doesn't replace your coding assistant. It's the l
 
 ## What Rune does
 
-- **Persistent** — understanding survives past any single session. Scan once, and every AI you connect from then on starts already knowing your software.
+- **Always current** — `rune watch` keeps the understanding graph up to date as you edit, not just when someone remembers to re-run a scan. It's a runtime, not a one-shot CLI.
+- **Persistent** — understanding survives past any single session. Every AI you connect starts already knowing your software, instead of re-reading it cold.
 - **Shared** — one understanding, many AI clients. Claude, GPT, Gemini, whatever you're running next month — they all ask the same Rune instance instead of maintaining separate, inconsistent mental models of your code.
 - **Explainable** — nothing Rune tells an AI is a black box. Ask it to justify any claim and it shows the exact source location behind it.
-- **Read-only** — Rune only observes. It never touches your source files.
+- **Read-only, suggest-only** — Rune never writes to your source. That's the actual moat: everything else in this space is racing toward autonomous code-writing; Rune stays strictly on the reading, understanding, and (later) suggesting side of that line. It never becomes the thing you have to double-check for silently breaking your code.
 
 ## How it works
 
@@ -46,11 +47,13 @@ npm install @pypl100/rune
 cd your-project
 npm install -g @pypl100/rune   # or: npx -p @pypl100/rune rune <command>
 rune init      # sets up Rune in your project
-rune scan       # builds Rune's understanding of your software
+rune watch &    # keeps the understanding current in the background as you work
 rune serve      # starts an MCP server exposing it to any AI client
 ```
 
-Then point any MCP-compatible client (Claude Desktop, Claude Code, custom agents, etc.) at the `rune serve` process. Every connected AI now shares the same understanding instead of re-deriving it per session.
+`rune watch` is the recommended default — it's what makes Rune a runtime instead of a tool you have to remember to re-run. `rune scan` (a one-shot version of the same thing) still works if you'd rather trigger it manually, e.g. in CI.
+
+Then point any MCP-compatible client (Claude Desktop, Claude Code, custom agents, etc.) at the `rune serve` process. Every connected AI now shares the same, continuously current understanding instead of re-deriving it per session.
 
 Example MCP client config entry:
 
@@ -70,7 +73,8 @@ Example MCP client config entry:
 | Command | What it does |
 |---|---|
 | `rune init [dir]` | Sets up `.rune/` in the current (or given) project |
-| `rune scan [dir]` | Builds (or rebuilds) the understanding graph |
+| `rune scan [dir]` | Builds (or rebuilds) the understanding graph, once |
+| `rune watch [dir]` | Keeps the understanding graph current as files change (Ctrl+C to stop) |
 | `rune serve [dir]` | Starts the MCP server |
 | `rune explain <id>` | Prints the evidence trail behind any fact or conclusion |
 | `rune --version` | Prints the installed Rune version |
@@ -131,7 +135,8 @@ npm run verify:mcp -- /path/to/your-project
 - AST-based extraction (swap-in replacement for the regex scanner)
 - Cross-file route resolution
 - Data-flow tracing between frontend calls and backend routes
-- Incremental re-scan (watch mode) instead of full re-scan
+- True incremental re-scan — `rune watch` exists now, but it still does a full rebuild on every change, not a diff of just what changed. Fine for small-to-medium projects; will matter on very large ones.
+- Suggestion tools (e.g. flagging a known-vulnerable dependency pattern with evidence, proposing a reviewable fix) — strictly additive to the read-only model, never auto-applied
 
 ## License
 

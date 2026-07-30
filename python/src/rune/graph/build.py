@@ -102,3 +102,38 @@ def read_graph(root_dir: str) -> dict | None:
     except (OSError, json.JSONDecodeError) as err:
         print(f"[rune] warning: {file_path} is corrupted or unreadable ({err}). Run `rune scan` to rebuild it.")
         return None
+
+
+def create_live_graph_reader(root_dir: str):
+    """
+    Returns a get_graph() callable that automatically reloads from disk when
+    the graph file's mtime changes, instead of caching forever. This is what
+    lets a long-running `rune serve` process stay current when a separate
+    `rune watch` process (or a manual `rune scan`) updates the graph in the
+    background -- without needing an explicit rescan call in between.
+    """
+    state = {"cached": None, "cached_mtime": None}
+
+    def current_mtime():
+        try:
+            return os.path.getmtime(os.path.join(root_dir, RUNE_DIR, GRAPH_FILENAME))
+        except OSError:
+            return None
+
+    def get_graph():
+        mtime = current_mtime()
+        stale_or_missing = state["cached"] is None or (mtime is not None and mtime != state["cached_mtime"])
+
+        if stale_or_missing:
+            reread = read_graph(root_dir)
+            if reread is not None:
+                state["cached"] = reread
+                state["cached_mtime"] = mtime
+            elif state["cached"] is None:
+                state["cached"] = build_graph(root_dir)
+                write_graph(root_dir, state["cached"])
+                state["cached_mtime"] = current_mtime()
+
+        return state["cached"]
+
+    return get_graph

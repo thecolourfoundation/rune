@@ -28,11 +28,11 @@ pip install -e .
 ```bash
 cd your-project
 rune init
-rune scan
+rune watch &   # keeps the understanding current in the background as you work
 rune serve
 ```
 
-Same CLI shape as the JS version: `rune init [dir]`, `rune scan [dir]`, `rune serve [dir]`, `rune explain <id>`, `rune --version`.
+Same CLI shape as the JS version: `rune init [dir]`, `rune scan [dir]`, `rune watch [dir]`, `rune serve [dir]`, `rune explain <id>`, `rune --version`.
 
 ## Requirements
 
@@ -60,3 +60,4 @@ python scripts/verify_mcp_server.py /path/to/your-project
 
 - The Python `mcp` SDK's tools are defined as explicit `@mcp.tool()`-decorated functions (`src/rune/mcp/server.py`), not a dynamically-built list like the JS side's `tools.js`. This was a deliberate choice: the decorator pattern is the most version-stable, best-documented part of the Python MCP SDK's API, which matters most for the one part of this port that couldn't be tested without a real install.
 - ID formatting differs cosmetically (hex counters, same scheme) but the scoping guarantee is identical: ids reset per scan and are unique within a scan.
+- `rune watch` is polling-based here (checks file mtimes on an interval), not event-based like the JS side's `fs.watch`. Python's standard library has no portable recursive file-system-event API, and pulling in a dependency (e.g. `watchdog`) just for this didn't seem worth it for v1. Functionally equivalent, just less immediate — changes are detected within one poll interval (0.5s by default) rather than instantly.

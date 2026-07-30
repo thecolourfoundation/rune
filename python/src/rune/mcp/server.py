@@ -13,20 +13,14 @@ live MCP client, so it deliberately takes the safest, best-documented path.
 
 from mcp.server.fastmcp import FastMCP
 
-from ..graph.build import read_graph, build_graph, write_graph
+from ..graph.build import build_graph, write_graph, create_live_graph_reader
 from ..version import get_version
 
 
 def create_server(root_dir: str) -> FastMCP:
     mcp = FastMCP("rune")
 
-    state = {"graph": read_graph(root_dir)}
-
-    def get_graph() -> dict:
-        if state["graph"] is None:
-            state["graph"] = build_graph(root_dir)
-            write_graph(root_dir, state["graph"])
-        return state["graph"]
+    get_graph = create_live_graph_reader(root_dir)
 
     @mcp.tool()
     def rune_get_overview() -> dict:
@@ -114,10 +108,11 @@ def create_server(root_dir: str) -> FastMCP:
     @mcp.tool()
     def rune_rescan() -> dict:
         """Re-scan the project from disk and refresh Rune's understanding
-        graph. Call this after significant code changes."""
-        state["graph"] = build_graph(root_dir)
-        write_graph(root_dir, state["graph"])
-        return {"status": "rescanned", "fileCount": state["graph"]["meta"]["fileCount"]}
+        graph. Call this after significant code changes if `rune watch`
+        isn't already running in the background."""
+        graph = build_graph(root_dir)
+        write_graph(root_dir, graph)
+        return {"status": "rescanned", "fileCount": graph["meta"]["fileCount"]}
 
     return mcp
 
