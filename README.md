@@ -38,6 +38,8 @@ npm install @pypl100/rune
 
 *A Python distribution exists at [`python/`](python/) with full feature parity (same fact/derived model, same detectors, same MCP tool surface) for teams who'd rather not require Node.js — published as `pip install north-rune` (the CLI command is still `rune`; see [python/README.md](python/README.md)).*
 
+> **If you install both** (`@pypl100/rune` via npm globally, and `north-rune` via pip) on the same machine, only one `rune` command will actually be on your `PATH` — whichever your shell finds first, not whichever you installed most recently. Check with `which -a rune`; if it lists more than one path, that's why. There's no version-detection magic here — it's plain OS `PATH` resolution, same as any two unrelated tools that happen to install a same-named binary. If you need a specific one, invoke it by its full path rather than relying on bare `rune`.
+
 ## Quickstart
 
 ```bash

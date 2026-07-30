@@ -14,6 +14,8 @@ Published on PyPI as `north-rune`. (`rune` itself and short variants like `rune-
 pip install north-rune
 ```
 
+> **Installing both this and the JS package** (`@pypl100/rune` via npm globally) on the same machine means only one `rune` command ends up on your `PATH` — whichever your shell finds first, not whichever you installed most recently. Run `which -a rune` to see if you have both; if so, invoke the one you want by its full path rather than relying on the bare `rune` command.
+
 For local development from source:
 
 ```bash
