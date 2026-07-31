@@ -6,15 +6,13 @@ Cursor, Codex, Claude Code — they all read your codebase cold, every session, 
 
 ```mermaid
 flowchart TB
-    subgraph Without["✗ Without Rune"]
-        direction TB
+    subgraph Without["Without Rune"]
         A1["New AI session"] --> A2["Reads files cold"]
         A2 --> A3["Reasons, answers"]
         A3 --> A4["Session ends"]
         A4 -.->|"understanding lost"| A1
     end
-    subgraph With["✓ With Rune"]
-        direction TB
+    subgraph With["With Rune"]
         B1["Code changes"] --> B2["rune watch<br/>rebuilds automatically"]
         B2 --> B3["Understanding<br/>always current"]
         B3 --> B4["New AI session"]
@@ -80,7 +78,7 @@ sequenceDiagram
     participant Dev as You
     participant Watch as rune watch
     participant Graph as .rune/graph.json
-    participant AI as Claude Code / Cursor / any MCP client
+    participant AI as AI client (Claude Code, Cursor, etc.)
 
     Dev->>Watch: save a file
     Watch->>Watch: detect change (debounced)
