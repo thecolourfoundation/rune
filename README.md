@@ -2,13 +2,27 @@
 
 **The Software Intelligence Runtime.**
 
-Cursor, Codex, and Claude Code write your code — one session at a time. Open a session, they read your files cold, reason about them, make changes, and when the session ends, whatever they figured out is gone. Next session, same cold start.
+Cursor, Codex, Claude Code — they all read your codebase cold, every session, and forget everything when it ends. Rune is the thing that runs underneath them, continuously, so every session starts already knowing your codebase instead of re-deriving it.
 
-Rune doesn't write code. It's the thing that runs underneath all of them, continuously — watching your codebase, keeping a standing, evidence-backed understanding of it current, so every session (yours or an agent's) starts already knowing the architecture instead of re-deriving it from scratch.
-
-No more re-explaining your routes and components every time. No more every assistant independently rediscovering the same things. Connect an AI to Rune, and it already understands your codebase — and can show you exactly why.
-
-*Under the hood, Rune continuously builds an evidence-backed understanding of your software and exposes it through MCP — see [How it works](#how-it-works) if you want the internals.*
+```mermaid
+flowchart TB
+    subgraph Without["✗ Without Rune"]
+        direction TB
+        A1["New AI session"] --> A2["Reads files cold"]
+        A2 --> A3["Reasons, answers"]
+        A3 --> A4["Session ends"]
+        A4 -.->|"understanding lost"| A1
+    end
+    subgraph With["✓ With Rune"]
+        direction TB
+        B1["Code changes"] --> B2["rune watch<br/>rebuilds automatically"]
+        B2 --> B3["Understanding<br/>always current"]
+        B3 --> B4["New AI session"]
+        B4 --> B5["Queries Rune over MCP"]
+        B5 --> B6["Evidence-backed answer,<br/>cited to file + line"]
+        B6 -.->|"stays current"| B3
+    end
+```
 
 **[What it does](#what-rune-does) · [How it works](#how-it-works) · [Install](#install) · [Quickstart](#quickstart) · [See real output](#what-this-actually-looks-like) · [CLI](#cli) · [MCP tools](#mcp-tools-exposed) · [Limitations](#current-scope-and-honest-limitations) · [Security](#security-notes)**
 
@@ -24,14 +38,20 @@ No more re-explaining your routes and components every time. No more every assis
 
 ## How it works
 
-You don't need to think about this to use Rune — it's here for anyone extending or debugging it.
+Two layers, and every conclusion traces back to evidence — not asserted, always inspectable:
 
-Internally, Rune keeps two distinct layers:
+```mermaid
+flowchart LR
+    F1["Fact<br/>import react<br/>UserCard.jsx:1"] --> D["Derived<br/>React component<br/>'UserCard'"]
+    F2["Fact<br/>function UserCard<br/>UserCard.jsx:3"] --> D
+    F3["Fact<br/>useState hook<br/>UserCard.jsx:4"] --> D
+    D --> C["AI's answer:<br/>'this project has<br/>a UserCard component'"]
+    C -.->|"rune_explain"| F1
+    C -.->|"rune_explain"| F2
+    C -.->|"rune_explain"| F3
+```
 
-- **Facts** — directly observed things: an import statement, an `app.get(...)` call, a function that returns JSX, a file convention that defines a Next.js route. Every fact records its file, line, and the exact matched source text.
-- **Derived understanding** — conclusions built *from* facts: an architecture summary, a unified API surface across Express and Next.js, a component index, file-level dependency relationships. Every conclusion lists exactly which facts it's based on.
-
-Nothing in the derived layer is asserted without a traceable path back to evidence. Call `rune explain <id>` (or the `rune_explain` MCP tool) on anything and get the fact chain behind it. That's the whole trust story: an AI using Rune isn't guessing about your architecture, and neither is Rune.
+Call `rune explain <id>` (or the `rune_explain` MCP tool) on anything and get that chain back. An AI using Rune isn't guessing about your architecture — and neither is Rune.
 
 ## Install
 
@@ -53,9 +73,23 @@ rune watch &    # keeps the understanding current in the background as you work
 rune serve      # starts an MCP server exposing it to any AI client
 ```
 
-`rune watch` is the recommended default — it's what makes Rune a runtime instead of a tool you have to remember to re-run. `rune scan` (a one-shot version of the same thing) still works if you'd rather trigger it manually, e.g. in CI.
+`rune watch` is the recommended default — it's what makes Rune a runtime instead of a tool you have to remember to re-run. (For CI or a one-shot check, use `rune scan` instead.)
 
-Then point any MCP-compatible client (Claude Desktop, Claude Code, custom agents, etc.) at the `rune serve` process. Every connected AI now shares the same, continuously current understanding instead of re-deriving it per session.
+```mermaid
+sequenceDiagram
+    participant Dev as You
+    participant Watch as rune watch
+    participant Graph as .rune/graph.json
+    participant AI as Claude Code / Cursor / any MCP client
+
+    Dev->>Watch: save a file
+    Watch->>Watch: detect change (debounced)
+    Watch->>Graph: rebuild + write
+    AI->>Graph: rune_search / rune_explain (via rune serve)
+    Graph-->>AI: current, evidence-backed answer
+```
+
+Point any MCP-compatible client (Claude Desktop, Claude Code, custom agents, etc.) at the `rune serve` process. Every connected AI shares the same, continuously current understanding — no restart, no manual rescan.
 
 Example MCP client config entry:
 
