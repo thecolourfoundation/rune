@@ -4,22 +4,26 @@
 
 Cursor, Codex, Claude Code — they all read your codebase cold, every session, and forget everything when it ends. Rune is the thing that runs underneath them, continuously, so every session starts already knowing your codebase instead of re-deriving it.
 
+**Without Rune:**
+
 ```mermaid
-flowchart TB
-    subgraph Without["Without Rune"]
-        A1["New AI session"] --> A2["Reads files cold"]
-        A2 --> A3["Reasons, answers"]
-        A3 --> A4["Session ends"]
-        A4 -.->|"understanding lost"| A1
-    end
-    subgraph With["With Rune"]
-        B1["Code changes"] --> B2["rune watch<br/>rebuilds automatically"]
-        B2 --> B3["Understanding<br/>always current"]
-        B3 --> B4["New AI session"]
-        B4 --> B5["Queries Rune over MCP"]
-        B5 --> B6["Evidence-backed answer,<br/>cited to file + line"]
-        B6 -.->|"stays current"| B3
-    end
+flowchart LR
+    A1["New AI session"] --> A2["Reads files cold"]
+    A2 --> A3["Reasons, answers"]
+    A3 --> A4["Session ends"]
+    A4 -.->|"understanding lost"| A1
+```
+
+**With Rune:**
+
+```mermaid
+flowchart LR
+    B1["Code changes"] --> B2["rune watch rebuilds automatically"]
+    B2 --> B3["Understanding always current"]
+    B3 --> B4["New AI session"]
+    B4 --> B5["Queries Rune over MCP"]
+    B5 --> B6["Evidence-backed answer, cited to file + line"]
+    B6 -.->|"stays current"| B3
 ```
 
 **[What it does](#what-rune-does) · [How it works](#how-it-works) · [Install](#install) · [Quickstart](#quickstart) · [See real output](#what-this-actually-looks-like) · [CLI](#cli) · [MCP tools](#mcp-tools-exposed) · [Limitations](#current-scope-and-honest-limitations) · [Security](#security-notes)**
@@ -40,10 +44,10 @@ Two layers, and every conclusion traces back to evidence — not asserted, alway
 
 ```mermaid
 flowchart LR
-    F1["Fact<br/>import react<br/>UserCard.jsx:1"] --> D["Derived<br/>React component<br/>'UserCard'"]
-    F2["Fact<br/>function UserCard<br/>UserCard.jsx:3"] --> D
-    F3["Fact<br/>useState hook<br/>UserCard.jsx:4"] --> D
-    D --> C["AI's answer:<br/>'this project has<br/>a UserCard component'"]
+    F1["Fact: import react, UserCard.jsx line 1"] --> D["Derived: React component UserCard"]
+    F2["Fact: function UserCard, UserCard.jsx line 3"] --> D
+    F3["Fact: useState hook, UserCard.jsx line 4"] --> D
+    D --> C["AI answer: this project has a UserCard component"]
     C -.->|"rune_explain"| F1
     C -.->|"rune_explain"| F2
     C -.->|"rune_explain"| F3
@@ -77,7 +81,7 @@ rune serve      # starts an MCP server exposing it to any AI client
 sequenceDiagram
     participant Dev as You
     participant Watch as rune watch
-    participant Graph as .rune/graph.json
+    participant Graph as graph file
     participant AI as AI client (Claude Code, Cursor, etc.)
 
     Dev->>Watch: save a file
