@@ -10,6 +10,8 @@ No more re-explaining your routes and components every time. No more every assis
 
 *Under the hood, Rune continuously builds an evidence-backed understanding of your software and exposes it through MCP — see [How it works](#how-it-works) if you want the internals.*
 
+**[What it does](#what-rune-does) · [How it works](#how-it-works) · [Install](#install) · [Quickstart](#quickstart) · [See real output](#what-this-actually-looks-like) · [CLI](#cli) · [MCP tools](#mcp-tools-exposed) · [Limitations](#current-scope-and-honest-limitations) · [Security](#security-notes)**
+
 ---
 
 ## What Rune does
@@ -68,6 +70,30 @@ Example MCP client config entry:
 }
 ```
 
+## What this actually looks like
+
+Real output, from the fixture project in this repo — not staged:
+
+```
+$ rune scan .
+[rune] scanned 4 file(s) in 34ms
+[rune] facts: 10, derived conclusions: 4
+[rune] graph written to /project/.rune/graph.json
+
+$ rune explain component_2
+{
+  "kind": "function",
+  "id": "component_2",
+  "type": "react_component",
+  "file": "components/UserCard.jsx",
+  "line": 3,
+  "name": "UserCard",
+  "evidence": "export function UserCard({ user }) {"
+}
+```
+
+That's the whole trust model in one example: Rune doesn't just say "there's a `UserCard` component" — it points at the exact file, the exact line, and the exact text it matched. Ask it to explain anything, and you get the receipts, not a claim.
+
 ## CLI
 
 | Command | What it does |
@@ -81,7 +107,7 @@ Example MCP client config entry:
 
 ## Configuration
 
-`rune init` writes `.rune/config.json`. The only setting in v0.1 is `ignore` — an array of directory/file names to exclude from scanning, on top of the built-in defaults (`node_modules`, `.git`, `dist`, `build`, `.next`, `coverage`, etc., and all dotfiles unconditionally):
+`rune init` writes `.rune/config.json`. The only setting today is `ignore` — an array of directory/file names to exclude from scanning, on top of the built-in defaults (`node_modules`, `.git`, `dist`, `build`, `.next`, `coverage`, etc., and all dotfiles unconditionally):
 
 ```json
 {
@@ -102,15 +128,15 @@ Example MCP client config entry:
 | `rune_get_file_dependencies` | Internal import graph for a file |
 | `rune_rescan` | Re-scan on demand after code changes |
 
-## v0.1 scope and honest limitations
+## Current scope and honest limitations
 
-Rune v0.1 is intentionally narrow:
+Rune is intentionally narrow right now:
 
 - **Framework support:** React, Next.js (pages + app router), Express. Everything else gets generic file/import scanning only.
-- **Extraction method:** heuristic, regex-based pattern matching — not a full AST parser. This keeps v0.1 dependency-free and fast, and every fact still carries file/line/matched-text evidence, but it will miss unusual code shapes (e.g. components returned via `React.createElement` with no JSX, dynamically constructed route strings, deeply re-exported components). A real AST-based extractor is the natural v0.2 upgrade — the fact schema is designed so extraction method can be swapped without touching anything downstream.
+- **Extraction method:** heuristic, regex-based pattern matching — not a full AST parser. This keeps the scanner dependency-free and fast, and every fact still carries file/line/matched-text evidence, but it will miss unusual code shapes (e.g. components returned via `React.createElement` with no JSX, dynamically constructed route strings, deeply re-exported components). A real AST-based extractor is the natural next upgrade — the fact schema is designed so extraction method can be swapped without touching anything downstream.
 - **No cross-file route-prefix resolution:** an Express route mounted via `app.use('/api', router)` in one file and defined in another isn't stitched into a single path yet.
 - **Read-only:** Rune never writes to your source files. It only ever writes its own graph to `.rune/graph.json`.
-- **Single-process, stdio MCP transport** in v0.1 — no multi-client daemon yet.
+- **Single-process, stdio MCP transport** — no multi-client daemon yet.
 
 ## Security notes
 
