@@ -1,110 +1,170 @@
 import path from "node:path";
-import { buildLineIndex, lineNumberAt } from "./lines.js";
+import { parse } from "@babel/parser";
+import _traverse from "@babel/traverse";
+const traverse = _traverse.default;
 
 /**
- * IMPORTANT — this is a heuristic, regex-based extractor, not a full AST parser.
- * Every fact records the exact line + matched text as evidence, so conclusions
- * stay inspectable even though extraction is approximate. Swapping in a real
- * parser (e.g. an AST library) later is a drop-in replacement for this module —
- * the fact schema below is what the rest of Rune depends on, not the method
- * used to produce it.
+ * AST-based extractor - replaces the regex heuristics in the previous version.
+ * Same fact schema as before (id, type, file, line, name, evidence), so
+ * everything downstream (graph, MCP tools) is unaffected. Extraction method
+ * changed; nothing else did.
  */
 
-const IMPORT_RE = /import\s+(?:type\s+)?(?:[\w*${}\s,]{0,300}?\s+from\s+)?['"]([^'"]+)['"]/g;
-const REQUIRE_RE = /require\(\s*['"]([^'"]+)['"]\s*\)/g;
-const FUNCTION_COMPONENT_RE = /(?:export\s+(?:default\s+)?)?function\s+([A-Z][A-Za-z0-9_]*)\s*\(/g;
-const ARROW_COMPONENT_RE = /(?:export\s+(?:default\s+)?)?const\s+([A-Z][A-Za-z0-9_]*)\s*=\s*(?:\([^)]*\)|[\w]+)\s*=>/g;
-const CLASS_COMPONENT_RE = /class\s+([A-Z][A-Za-z0-9_]*)\s+extends\s+(?:React\.)?Component/g;
-// Requires an actual tag shape (letter followed eventually by whitespace, "/",
-// or ">") AND that the "<" isn't immediately preceded by an identifier
-// character — which is what distinguishes JSX `<Item>` from a generic type
-// `Array<Item>`, since both otherwise look identical to a regex.
-const JSX_TAG_RE = /(?<![\w>])<([A-Za-z][\w.]*)[\s/>]/;
-const HOOK_USAGE_RE = /\b(use[A-Z][A-Za-z0-9_]*)\s*\(/g;
-const JSX_LOOKAHEAD_WINDOW_LINES = 40;
 const EVIDENCE_MAX_CHARS = 160;
+
+function evidenceFor(lines, ln) {
+  return lines[ln - 1]?.trim().slice(0, EVIDENCE_MAX_CHARS) || "";
+}
+
+// A function/arrow body counts as a component if it contains a JSX element
+// or fragment anywhere in its own scope (not nested function scopes).
+function containsJSX(outerPath) {
+  let found = false;
+  outerPath.traverse({
+    JSXElement(innerPath) { found = true; innerPath.stop(); },
+    JSXFragment(innerPath) { found = true; innerPath.stop(); },
+    Function(innerPath) { innerPath.skip(); }, // don't descend into nested functions
+  });
+  return found;
+}
 
 export function extractFileFacts(filePath, content, rootDir, nextId) {
   const relPath = path.relative(rootDir, filePath);
   const facts = [];
   const lines = content.split("\n");
-  const lineOffsets = buildLineIndex(content);
-  const lineOf = (index) => lineNumberAt(lineOffsets, index);
-  const evidenceAt = (ln) => lines[ln - 1]?.trim().slice(0, EVIDENCE_MAX_CHARS) || "";
 
-  // Imports (ESM `import` and CJS `require`)
-  for (const re of [IMPORT_RE, REQUIRE_RE]) {
-    re.lastIndex = 0;
-    let m;
-    while ((m = re.exec(content))) {
-      const ln = lineOf(m.index);
+  let ast;
+  try {
+    ast = parse(content, {
+      sourceType: "unambiguous",
+      plugins: ["jsx", "typescript", "classProperties", "decorators-legacy"],
+      errorRecovery: true,
+    });
+  } catch (err) {
+    // Unparseable file (syntax error, unsupported dialect) - skip silently,
+    // same as the regex version would have produced zero facts for garbage input.
+    return facts;
+  }
+
+  const hooksSeen = new Set();
+
+  traverse(ast, {
+    // Imports: import ... from "x"
+    ImportDeclaration(path) {
+      const ln = path.node.loc?.start.line;
       facts.push({
         id: nextId("import"),
         type: "import",
         file: relPath,
         line: ln,
-        target: m[1],
-        evidence: evidenceAt(ln),
+        target: path.node.source.value,
+        evidence: evidenceFor(lines, ln),
       });
-    }
-  }
+    },
 
-  // React components: function declarations and arrow-function assignments
-  for (const re of [FUNCTION_COMPONENT_RE, ARROW_COMPONENT_RE]) {
-    re.lastIndex = 0;
-    let m;
-    while ((m = re.exec(content))) {
-      const ln = lineOf(m.index);
-      const windowText = lines.slice(ln - 1, ln + JSX_LOOKAHEAD_WINDOW_LINES).join("\n");
-      if (JSX_TAG_RE.test(windowText)) {
+    // require("x")
+    CallExpression(path) {
+      const callee = path.node.callee;
+      if (
+        callee.type === "Identifier" &&
+        callee.name === "require" &&
+        path.node.arguments[0]?.type === "StringLiteral"
+      ) {
+        const ln = path.node.loc?.start.line;
         facts.push({
-          id: nextId("component"),
-          type: "react_component",
-          kind: "function",
+          id: nextId("import"),
+          type: "import",
           file: relPath,
           line: ln,
-          name: m[1],
-          evidence: evidenceAt(ln),
+          target: path.node.arguments[0].value,
+          evidence: evidenceFor(lines, ln),
         });
       }
-    }
-  }
 
-  // React components: classes
-  CLASS_COMPONENT_RE.lastIndex = 0;
-  let classMatch;
-  while ((classMatch = CLASS_COMPONENT_RE.exec(content))) {
-    const ln = lineOf(classMatch.index);
-    facts.push({
-      id: nextId("component"),
-      type: "react_component",
-      kind: "class",
-      file: relPath,
-      line: ln,
-      name: classMatch[1],
-      evidence: evidenceAt(ln),
-    });
-  }
+      // Hook usage: useXxx(...)
+      if (callee.type === "Identifier" && /^use[A-Z]/.test(callee.name)) {
+        if (!hooksSeen.has(callee.name)) {
+          hooksSeen.add(callee.name);
+          const ln = path.node.loc?.start.line;
+          facts.push({
+            id: nextId("hook"),
+            type: "hook_usage",
+            file: relPath,
+            line: ln,
+            name: callee.name,
+            evidence: evidenceFor(lines, ln),
+          });
+        }
+      }
+    },
 
-  // Hook usage — one fact per distinct hook name per file, not per call site.
-  // (Not attributed to a specific enclosing component in v1.)
-  const hooksSeen = new Set();
-  HOOK_USAGE_RE.lastIndex = 0;
-  let hookMatch;
-  while ((hookMatch = HOOK_USAGE_RE.exec(content))) {
-    const hookName = hookMatch[1];
-    if (hooksSeen.has(hookName)) continue;
-    hooksSeen.add(hookName);
-    const ln = lineOf(hookMatch.index);
-    facts.push({
-      id: nextId("hook"),
-      type: "hook_usage",
-      file: relPath,
-      line: ln,
-      name: hookName,
-      evidence: evidenceAt(ln),
-    });
-  }
+    // function Foo() { ... } - capitalized name + returns/contains JSX
+    FunctionDeclaration(path) {
+      const name = path.node.id?.name;
+      if (!name || !/^[A-Z]/.test(name)) return;
+      if (!containsJSX(path)) return;
+      const ln = path.node.loc?.start.line;
+      facts.push({
+        id: nextId("component"),
+        type: "react_component",
+        kind: "function",
+        file: relPath,
+        line: ln,
+        name,
+        evidence: evidenceFor(lines, ln),
+      });
+    },
+
+    // const Foo = (...) => { ... } or const Foo = () => <jsx/>
+    VariableDeclarator(path) {
+      const id = path.node.id;
+      const init = path.node.init;
+      if (id.type !== "Identifier" || !/^[A-Z]/.test(id.name)) return;
+      if (!init || (init.type !== "ArrowFunctionExpression" && init.type !== "FunctionExpression")) return;
+
+      const initPath = path.get("init");
+      const hasJSX =
+        init.body.type === "JSXElement" ||
+        init.body.type === "JSXFragment" ||
+        containsJSX(initPath);
+      if (!hasJSX) return;
+
+      const ln = path.node.loc?.start.line;
+      facts.push({
+        id: nextId("component"),
+        type: "react_component",
+        kind: "function",
+        file: relPath,
+        line: ln,
+        name: id.name,
+        evidence: evidenceFor(lines, ln),
+      });
+    },
+
+    // class Foo extends Component / React.Component
+    ClassDeclaration(path) {
+      const superClass = path.node.superClass;
+      if (!superClass) return;
+      const isComponent =
+        (superClass.type === "Identifier" && superClass.name === "Component") ||
+        (superClass.type === "MemberExpression" &&
+          superClass.object.name === "React" &&
+          superClass.property.name === "Component");
+      if (!isComponent) return;
+      const name = path.node.id?.name;
+      if (!name) return;
+      const ln = path.node.loc?.start.line;
+      facts.push({
+        id: nextId("component"),
+        type: "react_component",
+        kind: "class",
+        file: relPath,
+        line: ln,
+        name,
+        evidence: evidenceFor(lines, ln),
+      });
+    },
+  });
 
   return facts;
 }
