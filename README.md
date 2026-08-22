@@ -4,27 +4,10 @@
 
 Cursor, Codex, Claude Code — they all read your codebase cold, every session, and forget everything when it ends. Rune is the thing that runs underneath them, continuously, so every session starts already knowing your codebase instead of re-deriving it.
 
-**Without Rune:**
+**Without Rune:** every new AI session reads your files cold, reasons and answers, then forgets everything when the session ends — the next session starts back at zero.
 
-```mermaid
-flowchart LR
-    A1["New AI session"] --> A2["Reads files cold"]
-    A2 --> A3["Reasons, answers"]
-    A3 --> A4["Session ends"]
-    A4 -.->|"understanding lost"| A1
-```
+**With Rune:** `rune watch` keeps an understanding graph current in the background as you edit. Every new AI session queries that graph over MCP instead of re-reading files cold, and gets an evidence-backed answer cited to file + line.
 
-**With Rune:**
-
-```mermaid
-flowchart LR
-    B1["Code changes"] --> B2["rune watch rebuilds automatically"]
-    B2 --> B3["Understanding always current"]
-    B3 --> B4["New AI session"]
-    B4 --> B5["Queries Rune over MCP"]
-    B5 --> B6["Evidence-backed answer, cited to file + line"]
-    B6 -.->|"stays current"| B3
-```
 
 **[What it does](#what-rune-does) · [How it works](#how-it-works) · [Install](#install) · [Quickstart](#quickstart) · [See real output](#what-this-actually-looks-like) · [CLI](#cli) · [MCP tools](#mcp-tools-exposed) · [Limitations](#current-scope-and-honest-limitations) · [Security](#security-notes)**
 
