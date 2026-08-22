@@ -12,10 +12,6 @@ export const RUNE_DIR = ".rune";
 export const GRAPH_FILENAME = "graph.json";
 export const CONFIG_FILENAME = "config.json";
 
-/**
- * Reads .rune/config.json if present (written by `rune init`). Missing or
- * malformed config is not an error — it just means default (empty) ignores.
- */
 function readConfig(rootDir) {
   const configPath = path.join(rootDir, RUNE_DIR, CONFIG_FILENAME);
   if (!fs.existsSync(configPath)) return { ignore: [] };
@@ -38,15 +34,6 @@ export function buildGraph(rootDir) {
   const files = walkSourceFiles(rootDir, { ignore: config.ignore });
   const nextId = createIdGenerator();
 
-  // Route extraction always runs, regardless of what package.json declares.
-  // A package.json-only gate here would silently suppress real route facts
-  // whenever a codebase uses a framework without declaring it as a direct
-  // dependency (e.g. a monorepo where the dependency lives in a different
-  // package.json, or code that imports something ahead of updating the
-  // manifest) -- exactly the kind of gap real-world code has and a curated
-  // fixture doesn't. package.json is still read (detectProjectKind) as one
-  // signal among several; deriveUnderstanding decides what to report based
-  // on the actual facts found, not just the manifest.
   const facts = [];
   for (const filePath of files) {
     const content = readFileSafe(filePath);
@@ -69,7 +56,7 @@ export function buildGraph(rootDir) {
         next: projectInfo.hasNext,
         express: projectInfo.hasExpress,
       },
-      note: "Facts are extracted via heuristic regex-based scanning, not a full AST parser. Every fact carries file/line/evidence. Every derived node lists the fact ids it is based on.",
+      note: "Facts are extracted via AST-based parsing (Babel parser/traverse), not regex heuristics. Every fact carries file/line/evidence. Every derived node lists the fact ids it is based on.",
     },
     facts,
     derived,
@@ -97,13 +84,6 @@ export function readGraph(rootDir) {
   }
 }
 
-/**
- * Returns a getGraph() function that automatically reloads from disk when
- * the graph file's mtime changes, instead of caching forever. This is what
- * lets a long-running `rune serve` process stay current when a separate
- * `rune watch` process (or a manual `rune scan`) updates the graph in the
- * background -- without needing an explicit rescan call in between.
- */
 export function createLiveGraphReader(rootDir) {
   let cached = null;
   let cachedMtimeMs = null;
