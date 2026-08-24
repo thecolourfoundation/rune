@@ -5,6 +5,7 @@ import { extractFileFacts } from "../scanner/facts.js";
 import { extractExpressRoutes } from "../scanner/express.js";
 import { extractNextRoutes } from "../scanner/nextjs.js";
 import { extractSecretFindings } from "../scanner/secrets.js";
+import { extractShellExecFindings } from "../scanner/shellexec.js";
 import { deriveUnderstanding } from "./derive.js";
 import { createIdGenerator } from "../scanner/id.js";
 import { getVersion } from "../version.js";
@@ -43,6 +44,7 @@ export function buildGraph(rootDir) {
     facts.push(...extractFileFacts(filePath, content, rootDir, nextId));
     facts.push(...extractExpressRoutes(filePath, content, rootDir, nextId));
     securityFindings.push(...extractSecretFindings(filePath, content, rootDir, nextId));
+    securityFindings.push(...extractShellExecFindings(filePath, content, rootDir, nextId));
   }
   facts.push(...extractNextRoutes(rootDir, nextId));
 
