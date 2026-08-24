@@ -4,6 +4,7 @@ import { walkSourceFiles, readFileSafe, detectProjectKind } from "../scanner/wal
 import { extractFileFacts } from "../scanner/facts.js";
 import { extractExpressRoutes } from "../scanner/express.js";
 import { extractNextRoutes } from "../scanner/nextjs.js";
+import { extractSecretFindings } from "../scanner/secrets.js";
 import { deriveUnderstanding } from "./derive.js";
 import { createIdGenerator } from "../scanner/id.js";
 import { getVersion } from "../version.js";
@@ -35,11 +36,13 @@ export function buildGraph(rootDir) {
   const nextId = createIdGenerator();
 
   const facts = [];
+  const securityFindings = [];
   for (const filePath of files) {
     const content = readFileSafe(filePath);
     if (content == null) continue;
     facts.push(...extractFileFacts(filePath, content, rootDir, nextId));
     facts.push(...extractExpressRoutes(filePath, content, rootDir, nextId));
+    securityFindings.push(...extractSecretFindings(filePath, content, rootDir, nextId));
   }
   facts.push(...extractNextRoutes(rootDir, nextId));
 
@@ -60,6 +63,7 @@ export function buildGraph(rootDir) {
     },
     facts,
     derived,
+    securityFindings,
   };
 
   return graph;
