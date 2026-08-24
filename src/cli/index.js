@@ -2,6 +2,12 @@ import path from "node:path";
 import fs from "node:fs";
 import { buildGraph, writeGraph, readGraph, RUNE_DIR, GRAPH_FILENAME } from "../graph/build.js";
 import { getVersion } from "../version.js";
+import {
+  addProjectMemory,
+  listProjectMemory,
+  approveProjectMemory,
+  rejectProjectMemory,
+} from "../memory/memory.js";
 
 const HELP = `
 Rune — the Software Intelligence Runtime
@@ -12,8 +18,15 @@ Usage:
   rune watch [dir]    Keep the understanding graph current as files change
   rune serve [dir]    Start the MCP server so AI clients can query it
   rune explain <id>   Show the evidence trail behind a fact or conclusion
+  rune memory <cmd>   Manage project memory (add/list/approve/reject)
   rune --version      Print the installed Rune version
   rune --help         Show this help
+
+Memory commands:
+  rune memory add "<rule>" [--category=<cat>] [--evidence="<note>"] [dir]
+  rune memory list [--status=proposed|approved|rejected] [dir]
+  rune memory approve <id> [dir]
+  rune memory reject <id> [dir]
 `;
 
 export async function runCli(args) {
@@ -41,6 +54,8 @@ export async function runCli(args) {
       return cmdServe(rest);
     case "explain":
       return cmdExplain(rest);
+    case "memory":
+      return cmdMemory(rest);
     default:
       console.log(`Unknown command: ${command}\n${HELP}`);
       process.exitCode = 1;
@@ -206,4 +221,123 @@ async function cmdExplain(rest) {
 
   console.log(`[rune] no fact or derived node found with id "${id}"`);
   process.exitCode = 1;
+}
+
+/**
+ * Parses simple --flag=value arguments out of the remaining args, returning
+ * both the flags found and the leftover positional args. Kept intentionally
+ * minimal (no external arg-parsing dependency) since memory's CLI surface
+ * is small.
+ */
+function parseFlags(args) {
+  const flags = {};
+  const positional = [];
+  for (const arg of args) {
+    const match = /^--([\w-]+)=(.*)$/.exec(arg);
+    if (match) {
+      flags[match[1]] = match[2];
+    } else {
+      positional.push(arg);
+    }
+  }
+  return { flags, positional };
+}
+
+async function cmdMemory(rest) {
+  const [subcommand, ...subRest] = rest;
+
+  switch (subcommand) {
+    case "add":
+      return cmdMemoryAdd(subRest);
+    case "list":
+      return cmdMemoryList(subRest);
+    case "approve":
+      return cmdMemoryApprove(subRest);
+    case "reject":
+      return cmdMemoryReject(subRest);
+    default:
+      console.log(`Unknown memory command: ${subcommand}\n${HELP}`);
+      process.exitCode = 1;
+  }
+}
+
+async function cmdMemoryAdd(rest) {
+  const { flags, positional } = parseFlags(rest);
+  const [rule, ...dirArgs] = positional;
+
+  if (!rule) {
+    console.log('Usage: rune memory add "<rule>" [--category=<cat>] [--evidence="<note>"] [dir]');
+    process.exitCode = 1;
+    return;
+  }
+
+  const dir = resolveDir(dirArgs);
+  assertDirExists(dir);
+
+  const entry = addProjectMemory(dir, {
+    rule,
+    category: flags.category,
+    evidenceNote: flags.evidence,
+  });
+
+  console.log(`[rune] memory entry added (status: proposed, confidence: ${entry.confidence})`);
+  console.log(`[rune] id: ${entry.id}`);
+  console.log(`[rune] run \`rune memory approve ${entry.id}\` to trust this before it's surfaced to AI clients.`);
+}
+
+async function cmdMemoryList(rest) {
+  const { flags, positional } = parseFlags(rest);
+  const dir = resolveDir(positional);
+  assertDirExists(dir);
+
+  const entries = listProjectMemory(dir, { statusFilter: flags.status });
+
+  if (entries.length === 0) {
+    console.log(flags.status
+      ? `[rune] no memory entries with status "${flags.status}".`
+      : "[rune] no memory entries yet. Add one with `rune memory add`.");
+    return;
+  }
+
+  for (const e of entries) {
+    console.log(`${e.id}  [${e.status}]  (confidence: ${e.confidence})  ${e.rule}`);
+  }
+}
+
+async function cmdMemoryApprove(rest) {
+  const [id, ...dirArgs] = rest;
+  if (!id) {
+    console.log("Usage: rune memory approve <id> [dir]");
+    process.exitCode = 1;
+    return;
+  }
+  const dir = resolveDir(dirArgs);
+  assertDirExists(dir);
+
+  try {
+    const entry = approveProjectMemory(dir, id);
+    console.log(`[rune] approved: ${entry.rule}`);
+  } catch (err) {
+    console.error(`[rune] ${err.message}`);
+    process.exitCode = 1;
+  }
+}
+
+async function cmdMemoryReject(rest) {
+  const [id, ...dirArgs] = rest;
+  if (!id) {
+    console.log("Usage: rune memory reject <id> [dir]");
+    process.exitCode = 1;
+    return;
+  }
+  const dir = resolveDir(dirArgs);
+  assertDirExists(dir);
+
+  try {
+    const entry = rejectProjectMemory(dir, id);
+    console.log(`[rune] rejected: ${entry.rule}`);
+  } catch (err) {
+    console.error(`[rune] ${err.message}`);
+    process.exitCode = 1;
+  }
 }
