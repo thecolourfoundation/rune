@@ -3,12 +3,37 @@ import { parse } from "@babel/parser";
 import _traverse from "@babel/traverse";
 const traverse = _traverse.default;
 
-const DANGEROUS_EXEC_CALLEES = new Set([
-  "exec",
-  "execSync",
-  "spawn",
-  "execFile",
-]);
+/**
+ * Dangerous shell-exec detector — AST-based.
+ *
+ * v2: recalibrated after benchmark evidence showed severe over-flagging
+ * (83% of all security findings across a 25-repo benchmark were shell-exec,
+ * heavily dominated by ordinary, safe process-spawning code like
+ * `spawn(binaryPath, args)`). Root cause: v1 treated every bare identifier
+ * argument as "dynamic" and therefore automatically HIGH severity, with no
+ * distinction between:
+ *   - exec/execSync, which always invoke a shell (real injection risk if
+ *     the command string is attacker-influenced)
+ *   - spawn/execFile WITHOUT shell:true, which do NOT invoke a shell by
+ *     default -- args are passed directly to the OS, so string-injection
+ *     via shell metacharacters isn't possible even with a dynamic argument
+ *
+ * The corrected model:
+ *   - exec/execSync: shell is always invoked. A dynamically-constructed
+ *     command (template interpolation, concatenation) is HIGH. A bare
+ *     identifier alone is MEDIUM -- plausible risk, but we can't prove the
+ *     value is externally influenced vs. an internally-controlled path.
+ *   - spawn/execFile with shell:true: same shell-invocation risk as
+ *     exec -- treated the same as exec/execSync above.
+ *   - spawn/execFile WITHOUT shell:true: no shell metacharacter risk.
+ *     Only flagged (LOW) if the command itself is dynamically constructed
+ *     via template/concatenation, since that's still worth a human glance;
+ *     a bare identifier here is NOT flagged at all -- this is the standard,
+ *     safe way to spawn a subprocess with a variable path.
+ */
+
+const SHELL_ALWAYS_CALLEES = new Set(["exec", "execSync"]);
+const CONDITIONAL_SHELL_CALLEES = new Set(["spawn", "execFile"]);
 
 const EVIDENCE_MAX_CHARS = 160;
 
@@ -16,24 +41,24 @@ function evidenceFor(lines, ln) {
   return lines[ln - 1]?.trim().slice(0, EVIDENCE_MAX_CHARS) || "";
 }
 
-function isDynamicStringConstruction(node) {
-  if (!node) return false;
+function classifyConstruction(node) {
+  if (!node) return "identifier";
 
   if (node.type === "TemplateLiteral") {
-    return node.expressions.length > 0;
+    return node.expressions.length > 0 ? "interpolated" : "static";
   }
 
   if (node.type === "BinaryExpression" && node.operator === "+") {
-    const leftDynamic = node.left.type !== "StringLiteral";
-    const rightDynamic = node.right.type !== "StringLiteral";
-    return leftDynamic || rightDynamic;
+    const leftIsStatic = node.left.type === "StringLiteral";
+    const rightIsStatic = node.right.type === "StringLiteral";
+    return leftIsStatic && rightIsStatic ? "static" : "interpolated";
   }
 
-  if (node.type === "Identifier") return true;
+  if (node.type === "StringLiteral") return "static";
 
-  if (node.type === "StringLiteral") return false;
+  if (node.type === "Identifier") return "identifier";
 
-  return true;
+  return "identifier";
 }
 
 function hasShellTrueOption(argsNode) {
@@ -94,20 +119,40 @@ export function extractShellExecFindings(filePath, content, rootDir, nextId) {
         calleeName = callee.property.name;
       }
 
-      if (!calleeName || !DANGEROUS_EXEC_CALLEES.has(calleeName)) return;
+      const isShellAlways = calleeName && SHELL_ALWAYS_CALLEES.has(calleeName);
+      const isConditionalShell = calleeName && CONDITIONAL_SHELL_CALLEES.has(calleeName);
+      if (!isShellAlways && !isConditionalShell) return;
 
       const args = path.node.arguments;
       if (args.length === 0) return;
 
-      const firstArg = args[0];
-      const dynamic = isDynamicStringConstruction(firstArg);
+      const construction = classifyConstruction(args[0]);
+      if (construction === "static") return;
 
-      if (calleeName === "spawn") {
-        const optsArg = args[2];
-        const shellTrue = hasShellTrueOption(optsArg);
-        if (!shellTrue && !dynamic) return;
-      } else if (!dynamic) {
-        return;
+      let shellInvoked = isShellAlways;
+      if (isConditionalShell) {
+        const optsArg = args[2] ?? args[1];
+        shellInvoked = hasShellTrueOption(optsArg);
+      }
+
+      let severity;
+      let ruleSuffix;
+
+      if (shellInvoked) {
+        if (construction === "interpolated") {
+          severity = "high";
+          ruleSuffix = "dynamically-constructed command";
+        } else {
+          severity = "medium";
+          ruleSuffix = "variable command (unverified source)";
+        }
+      } else {
+        if (construction === "interpolated") {
+          severity = "low";
+          ruleSuffix = "dynamically-constructed command (no shell invoked)";
+        } else {
+          return;
+        }
       }
 
       const ln = path.node.loc?.start.line;
@@ -115,12 +160,12 @@ export function extractShellExecFindings(filePath, content, rootDir, nextId) {
         id: nextId("shellexec"),
         type: "security_finding",
         category: "dangerous_shell_exec",
-        rule: `Dynamic command passed to ${calleeName}()`,
-        severity: "high",
+        rule: `${calleeName}() called with ${ruleSuffix}`,
+        severity,
         file: relPath,
         line: ln,
         evidence: evidenceFor(lines, ln),
-        confidence: "medium",
+        confidence: severity === "high" ? "medium" : "low",
       });
     },
   });
