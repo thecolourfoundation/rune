@@ -63,6 +63,26 @@ export function extractShellExecFindings(filePath, content, rootDir, nextId) {
     return findings;
   }
 
+  let importsChildProcess = false;
+  traverse(ast, {
+    ImportDeclaration(p) {
+      if (/^(node:)?child_process$/.test(p.node.source.value)) importsChildProcess = true;
+    },
+    CallExpression(p) {
+      const callee = p.node.callee;
+      if (
+        callee.type === "Identifier" &&
+        callee.name === "require" &&
+        p.node.arguments[0]?.type === "StringLiteral" &&
+        /^(node:)?child_process$/.test(p.node.arguments[0].value)
+      ) {
+        importsChildProcess = true;
+      }
+    },
+  });
+
+  if (!importsChildProcess) return findings;
+
   traverse(ast, {
     CallExpression(path) {
       const callee = path.node.callee;
