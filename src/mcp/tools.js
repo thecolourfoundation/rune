@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { listProjectMemory, listExperience } from "../memory/memory.js";
 
 // NOTE: @modelcontextprotocol/sdk's McpServer.registerTool() requires Zod
 // schemas (a raw shape object of Zod types), not JSON Schema. An earlier
@@ -7,7 +8,7 @@ import { z } from "zod";
 
 const emptySchema = {};
 
-export function buildTools(getGraph) {
+export function buildTools(getGraph, rootDir) {
   return [
     {
       name: "rune_get_overview",
@@ -101,6 +102,41 @@ export function buildTools(getGraph) {
         const graph = getGraph();
         const node = graph.derived.find((d) => d.type === "file_dependency" && d.file === file);
         return node || { file, dependsOn: [], note: "No recorded internal dependencies for this file." };
+      },
+    },
+    {
+      name: "rune_get_memory",
+      title: "Get project memory",
+      description:
+        "Get durable project-specific knowledge Rune has recorded: conventions, required commands, known pitfalls. Each entry has a status (proposed/approved/rejected) and confidence score -- only 'approved' entries should be treated as trusted; 'proposed' entries are unverified and should be treated as a hint, not a fact.",
+      inputSchema: {
+        status: z
+          .enum(["proposed", "approved", "rejected"])
+          .optional()
+          .describe("Filter by status. Omit to get all entries regardless of status."),
+      },
+      handler: async ({ status }) => {
+        const entries = listProjectMemory(rootDir, { statusFilter: status });
+        return {
+          entries,
+          note: "Only entries with status 'approved' have been confirmed by a human. Treat 'proposed' entries as unverified hints.",
+        };
+      },
+    },
+    {
+      name: "rune_get_experience",
+      title: "Get task experience log",
+      description:
+        "Get the history of past task attempts recorded for this project: what was tried, whether it succeeded or failed, and why. This is raw history, not verified rules -- use rune_get_memory for trusted, approved conventions.",
+      inputSchema: {
+        outcome: z
+          .enum(["success", "failure"])
+          .optional()
+          .describe("Filter by outcome. Omit to get all entries."),
+      },
+      handler: async ({ outcome }) => {
+        const entries = listExperience(rootDir, { outcomeFilter: outcome });
+        return { entries };
       },
     },
   ];

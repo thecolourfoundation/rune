@@ -7,6 +7,8 @@ import {
   listProjectMemory,
   approveProjectMemory,
   rejectProjectMemory,
+  addExperience,
+  listExperience,
 } from "../memory/memory.js";
 
 const HELP = `
@@ -19,6 +21,7 @@ Usage:
   rune serve [dir]    Start the MCP server so AI clients can query it
   rune explain <id>   Show the evidence trail behind a fact or conclusion
   rune memory <cmd>   Manage project memory (add/list/approve/reject)
+  rune experience <cmd>  Log and review past task outcomes (add/list)
   rune --version      Print the installed Rune version
   rune --help         Show this help
 
@@ -27,6 +30,10 @@ Memory commands:
   rune memory list [--status=proposed|approved|rejected] [dir]
   rune memory approve <id> [dir]
   rune memory reject <id> [dir]
+
+Experience commands:
+  rune experience add "<task>" --outcome=success|failure [--strategy="<note>"] [--evidence="<note>"] [dir]
+  rune experience list [--outcome=success|failure] [dir]
 `;
 
 export async function runCli(args) {
@@ -56,6 +63,8 @@ export async function runCli(args) {
       return cmdExplain(rest);
     case "memory":
       return cmdMemory(rest);
+    case "experience":
+      return cmdExperience(rest);
     default:
       console.log(`Unknown command: ${command}\n${HELP}`);
       process.exitCode = 1;
@@ -339,5 +348,66 @@ async function cmdMemoryReject(rest) {
   } catch (err) {
     console.error(`[rune] ${err.message}`);
     process.exitCode = 1;
+  }
+}
+
+async function cmdExperience(rest) {
+  const [subcommand, ...subRest] = rest;
+
+  switch (subcommand) {
+    case "add":
+      return cmdExperienceAdd(subRest);
+    case "list":
+      return cmdExperienceList(subRest);
+    default:
+      console.log(`Unknown experience command: ${subcommand}\n${HELP}`);
+      process.exitCode = 1;
+  }
+}
+
+async function cmdExperienceAdd(rest) {
+  const { flags, positional } = parseFlags(rest);
+  const [taskDescription, ...dirArgs] = positional;
+
+  if (!taskDescription || !flags.outcome) {
+    console.log('Usage: rune experience add "<task>" --outcome=success|failure [--strategy="<note>"] [--evidence="<note>"] [dir]');
+    process.exitCode = 1;
+    return;
+  }
+
+  const dir = resolveDir(dirArgs);
+  assertDirExists(dir);
+
+  try {
+    const entry = addExperience(dir, {
+      taskDescription,
+      outcome: flags.outcome,
+      strategyUsed: flags.strategy,
+      evidenceSource: flags.evidence,
+    });
+    console.log(`[rune] experience recorded (${entry.outcome})`);
+    console.log(`[rune] id: ${entry.id}`);
+  } catch (err) {
+    console.error(`[rune] ${err.message}`);
+    process.exitCode = 1;
+  }
+}
+
+async function cmdExperienceList(rest) {
+  const { flags, positional } = parseFlags(rest);
+  const dir = resolveDir(positional);
+  assertDirExists(dir);
+
+  const entries = listExperience(dir, { outcomeFilter: flags.outcome });
+
+  if (entries.length === 0) {
+    console.log(flags.outcome
+      ? `[rune] no experience entries with outcome "${flags.outcome}".`
+      : "[rune] no experience entries yet. Add one with `rune experience add`.");
+    return;
+  }
+
+  for (const e of entries) {
+    console.log(`${e.id}  [${e.outcome}]  ${e.taskDescription}`);
   }
 }

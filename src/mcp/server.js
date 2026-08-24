@@ -36,7 +36,7 @@ export async function startServer(rootDir) {
     }
   };
 
-  for (const tool of buildTools(getGraph)) {
+  for (const tool of buildTools(getGraph, rootDir)) {
     server.registerTool(
       tool.name,
       { title: tool.title, description: tool.description, inputSchema: tool.inputSchema },

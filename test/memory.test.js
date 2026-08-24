@@ -10,6 +10,8 @@ import {
   approveProjectMemory,
   rejectProjectMemory,
   listProjectMemory,
+  addExperience,
+  listExperience,
   MEMORY_FILENAME,
 } from "../src/memory/memory.js";
 
@@ -116,7 +118,73 @@ test("a proposed entry starts with modest confidence, not full confidence", () =
 test("memory.json is a separate file from graph.json -- scanning does not touch it", () => {
   const dir = tmpProjectDir();
   addProjectMemory(dir, { rule: "persistent rule" });
+  // Simulate what a graph write would do -- write graph.json in the same .rune dir.
   fs.writeFileSync(path.join(dir, ".rune", "graph.json"), JSON.stringify({ facts: [] }));
+  // Memory should be untouched by that.
   const memory = readMemory(dir);
   assert.equal(memory.projectMemory.length, 1);
+});
+
+test("addExperience records a success entry with all fields", () => {
+  const dir = tmpProjectDir();
+  const entry = addExperience(dir, {
+    taskDescription: "Add a new field to the user form",
+    strategyUsed: "ran npm test -- scanner after editing src/scanner/facts.js",
+    outcome: "success",
+    evidenceSource: "tests passed",
+  });
+  assert.equal(entry.outcome, "success");
+  assert.ok(entry.id.startsWith("exp_"));
+  assert.ok(entry.timestamp);
+});
+
+test("addExperience throws if outcome is not 'success' or 'failure'", () => {
+  const dir = tmpProjectDir();
+  assert.throws(() =>
+    addExperience(dir, { taskDescription: "some task", outcome: "maybe" })
+  );
+});
+
+test("addExperience throws on an empty taskDescription", () => {
+  const dir = tmpProjectDir();
+  assert.throws(() =>
+    addExperience(dir, { taskDescription: "", outcome: "success" })
+  );
+});
+
+test("addExperience persists to disk and is readable via listExperience", () => {
+  const dir = tmpProjectDir();
+  addExperience(dir, { taskDescription: "task A", outcome: "success" });
+  addExperience(dir, { taskDescription: "task B", outcome: "failure" });
+  const all = listExperience(dir);
+  assert.equal(all.length, 2);
+});
+
+test("listExperience filters by outcome", () => {
+  const dir = tmpProjectDir();
+  addExperience(dir, { taskDescription: "task A", outcome: "success" });
+  addExperience(dir, { taskDescription: "task B", outcome: "failure" });
+  const successes = listExperience(dir, { outcomeFilter: "success" });
+  const failures = listExperience(dir, { outcomeFilter: "failure" });
+  assert.equal(successes.length, 1);
+  assert.equal(failures.length, 1);
+  assert.equal(successes[0].taskDescription, "task A");
+});
+
+test("addExperience does not modify projectMemory -- recording history is not the same as trusting a rule", () => {
+  const dir = tmpProjectDir();
+  addExperience(dir, { taskDescription: "task A", outcome: "success" });
+  const memory = readMemory(dir);
+  assert.equal(memory.projectMemory.length, 0);
+});
+
+test("addExperience can reference related project memory ids", () => {
+  const dir = tmpProjectDir();
+  const memEntry = addProjectMemory(dir, { rule: "some rule" });
+  const expEntry = addExperience(dir, {
+    taskDescription: "task using that rule",
+    outcome: "success",
+    relatedMemoryIds: [memEntry.id],
+  });
+  assert.deepEqual(expEntry.relatedProjectMemoryIds, [memEntry.id]);
 });
