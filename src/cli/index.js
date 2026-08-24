@@ -130,7 +130,57 @@ async function cmdScan(rest) {
 
   console.log(`[rune] scanned ${graph.meta.fileCount} file(s) in ${ms}ms`);
   console.log(`[rune] facts: ${graph.facts.length}, derived conclusions: ${graph.derived.length}`);
+
+  printSecurityVerdict(graph.securityFindings || []);
+
   console.log(`[rune] graph written to ${filePath}`);
+  console.log(`[rune] run \`rune explain <id>\` on any fact/finding above for the full evidence trail.`);
+}
+
+/**
+ * Prints a one-line verdict plus a short breakdown by severity BEFORE any
+ * raw finding details -- the goal is "what did Rune learn, is there
+ * anything to act on" answered in the first few lines a user sees, not
+ * buried under a wall of individual finding objects. Full detail is still
+ * available via `rune explain <id>`; this is the summary layer on top.
+ */
+function printSecurityVerdict(findings) {
+  if (findings.length === 0) {
+    console.log(`[rune] security: no findings.`);
+    return;
+  }
+
+  const bySeverity = { critical: 0, high: 0, medium: 0, low: 0 };
+  for (const f of findings) {
+    if (bySeverity[f.severity] !== undefined) bySeverity[f.severity] += 1;
+  }
+
+  const criticalOrHigh = bySeverity.critical + bySeverity.high;
+  const verdict = criticalOrHigh > 0
+    ? `${criticalOrHigh} finding(s) worth a look`
+    : `${findings.length} finding(s), none critical/high`;
+
+  console.log(`[rune] security: ${verdict}`);
+
+  const parts = [];
+  if (bySeverity.critical) parts.push(`${bySeverity.critical} critical`);
+  if (bySeverity.high) parts.push(`${bySeverity.high} high`);
+  if (bySeverity.medium) parts.push(`${bySeverity.medium} medium`);
+  if (bySeverity.low) parts.push(`${bySeverity.low} low`);
+  console.log(`[rune]   ${parts.join(", ")}`);
+
+  // Show the top few critical/high findings inline -- enough to act on
+  // without needing a separate command, capped so a large finding set
+  // doesn't turn `rune scan` output into a wall of text.
+  const priority = findings
+    .filter((f) => f.severity === "critical" || f.severity === "high")
+    .slice(0, 5);
+  for (const f of priority) {
+    console.log(`[rune]   [${f.severity}] ${f.rule} — ${f.file}:${f.line} (${f.id})`);
+  }
+  if (criticalOrHigh > priority.length) {
+    console.log(`[rune]   ...and ${criticalOrHigh - priority.length} more. See .rune/graph.json or rune_search via MCP.`);
+  }
 }
 
 async function cmdWatch(rest) {
@@ -198,7 +248,7 @@ async function cmdExplain(rest) {
 
   const graph = readGraph(dir);
   if (!graph) {
-    console.log(`[rune] no graph found. Run \`rune scan\` first.`);
+    console.log(`[rune] no graph found here yet. Run \`rune scan\` first to build one, then try again.`);
     process.exitCode = 1;
     return;
   }
