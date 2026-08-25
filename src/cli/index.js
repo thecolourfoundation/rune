@@ -128,8 +128,20 @@ async function cmdScan(rest) {
   const filePath = writeGraph(dir, graph);
   const ms = Date.now() - start;
 
+  if (graph.meta.status === "no_supported_files") {
+    console.log(`[rune] scanned 0 supported source files in ${ms}ms`);
+    console.log(`[rune] security analysis skipped: no supported source files found (unsupported language, or nothing scannable in this project)`);
+    console.log(`[rune] status: NO_SUPPORTED_FILES`);
+    console.log(`[rune] graph written to ${filePath}`);
+    return;
+  }
+
   console.log(`[rune] scanned ${graph.meta.fileCount} file(s) in ${ms}ms`);
   console.log(`[rune] facts: ${graph.facts.length}, derived conclusions: ${graph.derived.length}`);
+
+  if (graph.scanWarnings && graph.scanWarnings.length > 0) {
+    console.log(`[rune] warning: ${graph.scanWarnings.length} file(s) failed to fully parse and were skipped (scan continued)`);
+  }
 
   printSecurityVerdict(graph.securityFindings || []);
 
@@ -143,35 +155,54 @@ async function cmdScan(rest) {
  * anything to act on" answered in the first few lines a user sees, not
  * buried under a wall of individual finding objects. Full detail is still
  * available via `rune explain <id>`; this is the summary layer on top.
+ *
+ * IMPORTANT: this function is the single source of truth for the counts it
+ * prints. It must derive every number directly from the `findings` array
+ * passed in (which is graph.securityFindings) via plain filter().length --
+ * no caching, no separate running tally, no reliance on any other function
+ * having counted correctly first. A benchmark run against React previously
+ * showed this summary printing "6 high, 6 medium" against a graph that
+ * actually contained 7 high / 5 medium findings -- a real discrepancy
+ * between what's on disk and what the CLI reports. Recomputing everything
+ * fresh, in one place, from one array, is the fix -- and countSeverities
+ * below is exported specifically so a test can assert exact numbers
+ * against a known fixture instead of only checking the code "looks right."
  */
+export function countSeverities(findings) {
+  return {
+    total: findings.length,
+    critical: findings.filter((f) => f.severity === "critical").length,
+    high: findings.filter((f) => f.severity === "high").length,
+    medium: findings.filter((f) => f.severity === "medium").length,
+    low: findings.filter((f) => f.severity === "low").length,
+  };
+}
+
 function printSecurityVerdict(findings) {
   if (findings.length === 0) {
     console.log(`[rune] security: no findings.`);
     return;
   }
 
-  const bySeverity = { critical: 0, high: 0, medium: 0, low: 0 };
-  for (const f of findings) {
-    if (bySeverity[f.severity] !== undefined) bySeverity[f.severity] += 1;
+  const counts = countSeverities(findings);
+  const criticalOrHigh = counts.critical + counts.high;
+
+  console.log(`[rune] security findings: ${counts.total}`);
+  console.log(`[rune]   critical: ${counts.critical}  high: ${counts.high}  medium: ${counts.medium}  low: ${counts.low}`);
+
+  if (criticalOrHigh === 0) {
+    console.log(`[rune]   none critical/high -- nothing urgent, but see .rune/graph.json for the full list.`);
+    return;
   }
 
-  const criticalOrHigh = bySeverity.critical + bySeverity.high;
-  const verdict = criticalOrHigh > 0
-    ? `${criticalOrHigh} finding(s) worth a look`
-    : `${findings.length} finding(s), none critical/high`;
-
-  console.log(`[rune] security: ${verdict}`);
-
-  const parts = [];
-  if (bySeverity.critical) parts.push(`${bySeverity.critical} critical`);
-  if (bySeverity.high) parts.push(`${bySeverity.high} high`);
-  if (bySeverity.medium) parts.push(`${bySeverity.medium} medium`);
-  if (bySeverity.low) parts.push(`${bySeverity.low} low`);
-  console.log(`[rune]   ${parts.join(", ")}`);
+  console.log(`[rune] showing ${Math.min(criticalOrHigh, 5)} of ${criticalOrHigh} critical/high finding(s):`);
 
   // Show the top few critical/high findings inline -- enough to act on
   // without needing a separate command, capped so a large finding set
-  // doesn't turn `rune scan` output into a wall of text.
+  // doesn't turn `rune scan` output into a wall of text. This slice is
+  // ONLY for which findings get individually printed below -- it must
+  // never feed back into the counts above, which is what a slice-before-
+  // count bug would look like.
   const priority = findings
     .filter((f) => f.severity === "critical" || f.severity === "high")
     .slice(0, 5);

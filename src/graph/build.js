@@ -62,21 +62,34 @@ export function buildGraph(rootDir) {
 
   const facts = [];
   const rawSecurityFindings = [];
+  const scanWarnings = [];
   for (const filePath of files) {
     const content = readFileSafe(filePath);
     if (content == null) continue;
-    facts.push(...extractFileFacts(filePath, content, rootDir, nextId));
-    facts.push(...extractExpressRoutes(filePath, content, rootDir, nextId));
-    rawSecurityFindings.push(...extractSecretFindings(filePath, content, rootDir, nextId));
-    rawSecurityFindings.push(...extractShellExecFindings(filePath, content, rootDir, nextId));
-    rawSecurityFindings.push(...extractWorkflowFindings(filePath, content, rootDir, nextId));
-    rawSecurityFindings.push(...extractDependencyFindings(filePath, content, rootDir, nextId));
+
+    // Every extractor call for this file is wrapped in one try/catch --
+    // this is the top-level safety net. A benchmark run against large
+    // real-world repos (VS Code, Next.js) showed a single file's parser/
+    // traversal failure could throw uncaught and kill the ENTIRE
+    // repository scan, discarding everything already collected. One bad
+    // file must cost that file's own facts/findings, never the whole scan.
+    const relPath = path.relative(rootDir, filePath);
+    try {
+      facts.push(...extractFileFacts(filePath, content, rootDir, nextId));
+      facts.push(...extractExpressRoutes(filePath, content, rootDir, nextId));
+      rawSecurityFindings.push(...extractSecretFindings(filePath, content, rootDir, nextId));
+      rawSecurityFindings.push(...extractShellExecFindings(filePath, content, rootDir, nextId));
+      rawSecurityFindings.push(...extractWorkflowFindings(filePath, content, rootDir, nextId));
+      rawSecurityFindings.push(...extractDependencyFindings(filePath, content, rootDir, nextId));
+    } catch (err) {
+      scanWarnings.push({ file: relPath, error: err.message });
+    }
   }
   facts.push(...extractNextRoutes(rootDir, nextId));
 
   const securityFindings = deduplicateFindings(rawSecurityFindings);
 
-  const derived = deriveUnderstanding(facts, projectInfo);
+  const derived = facts.length > 0 ? deriveUnderstanding(facts, projectInfo) : [];
 
   const graph = {
     meta: {
@@ -84,6 +97,14 @@ export function buildGraph(rootDir) {
       generatedAt: new Date().toISOString(),
       rootDir,
       fileCount: files.length,
+      // "success" is misleading when zero files were actually scannable --
+      // a benchmark run against kubernetes/kubernetes and torvalds/linux
+      // showed Rune printing "no security findings" for repos it had not
+      // meaningfully analyzed at all (0 files discovered as scannable
+      // JS/TS). This status makes that distinction explicit instead of
+      // letting a clean-looking zero imply a real, completed analysis.
+      status: files.length === 0 ? "no_supported_files" : "success",
+      filesFailedToParse: scanWarnings.length,
       stack: {
         react: projectInfo.hasReact,
         next: projectInfo.hasNext,
@@ -94,6 +115,7 @@ export function buildGraph(rootDir) {
     facts,
     derived,
     securityFindings,
+    scanWarnings,
   };
 
   return graph;

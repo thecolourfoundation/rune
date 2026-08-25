@@ -48,123 +48,138 @@ export function extractFileFacts(filePath, content, rootDir, nextId) {
 
   const hooksSeen = new Set();
 
-  traverse(ast, {
-    // Imports: import ... from "x"
-    ImportDeclaration(path) {
-      const ln = path.node.loc?.start.line;
-      facts.push({
-        id: nextId("import"),
-        type: "import",
-        file: relPath,
-        line: ln,
-        target: path.node.source.value,
-        evidence: evidenceFor(lines, ln),
-      });
-    },
-
-    // require("x")
-    CallExpression(path) {
-      const callee = path.node.callee;
-      if (
-        callee.type === "Identifier" &&
-        callee.name === "require" &&
-        path.node.arguments[0]?.type === "StringLiteral"
-      ) {
+  // traverse() is wrapped separately from parse() -- a syntactically valid
+  // AST can still cause traverse() itself to throw (e.g. unusual real-world
+  // code shapes Babel's visitor logic doesn't expect). A benchmark run
+  // against large real repos (VS Code, Next.js) hit exactly this: parse()
+  // succeeded, traverse() threw, and the exception propagated uncaught all
+  // the way up through build.js, killing the entire repository scan over
+  // one file. Catching it here means one problematic file loses its own
+  // facts, not the whole scan.
+  try {
+    traverse(ast, {
+      // Imports: import ... from "x"
+      ImportDeclaration(path) {
         const ln = path.node.loc?.start.line;
         facts.push({
           id: nextId("import"),
           type: "import",
           file: relPath,
           line: ln,
-          target: path.node.arguments[0].value,
+          target: path.node.source.value,
           evidence: evidenceFor(lines, ln),
         });
-      }
+      },
 
-      // Hook usage: useXxx(...)
-      if (callee.type === "Identifier" && /^use[A-Z]/.test(callee.name)) {
-        if (!hooksSeen.has(callee.name)) {
-          hooksSeen.add(callee.name);
+      // require("x")
+      CallExpression(path) {
+        const callee = path.node.callee;
+        if (
+          callee.type === "Identifier" &&
+          callee.name === "require" &&
+          path.node.arguments[0]?.type === "StringLiteral"
+        ) {
           const ln = path.node.loc?.start.line;
           facts.push({
-            id: nextId("hook"),
-            type: "hook_usage",
+            id: nextId("import"),
+            type: "import",
             file: relPath,
             line: ln,
-            name: callee.name,
+            target: path.node.arguments[0].value,
             evidence: evidenceFor(lines, ln),
           });
         }
-      }
-    },
 
-    // function Foo() { ... } - capitalized name + returns/contains JSX
-    FunctionDeclaration(path) {
-      const name = path.node.id?.name;
-      if (!name || !/^[A-Z]/.test(name)) return;
-      if (!containsJSX(path)) return;
-      const ln = path.node.loc?.start.line;
-      facts.push({
-        id: nextId("component"),
-        type: "react_component",
-        kind: "function",
-        file: relPath,
-        line: ln,
-        name,
-        evidence: evidenceFor(lines, ln),
-      });
-    },
+        // Hook usage: useXxx(...)
+        if (callee.type === "Identifier" && /^use[A-Z]/.test(callee.name)) {
+          if (!hooksSeen.has(callee.name)) {
+            hooksSeen.add(callee.name);
+            const ln = path.node.loc?.start.line;
+            facts.push({
+              id: nextId("hook"),
+              type: "hook_usage",
+              file: relPath,
+              line: ln,
+              name: callee.name,
+              evidence: evidenceFor(lines, ln),
+            });
+          }
+        }
+      },
 
-    // const Foo = (...) => { ... } or const Foo = () => <jsx/>
-    VariableDeclarator(path) {
-      const id = path.node.id;
-      const init = path.node.init;
-      if (id.type !== "Identifier" || !/^[A-Z]/.test(id.name)) return;
-      if (!init || (init.type !== "ArrowFunctionExpression" && init.type !== "FunctionExpression")) return;
+      // function Foo() { ... } - capitalized name + returns/contains JSX
+      FunctionDeclaration(path) {
+        const name = path.node.id?.name;
+        if (!name || !/^[A-Z]/.test(name)) return;
+        if (!containsJSX(path)) return;
+        const ln = path.node.loc?.start.line;
+        facts.push({
+          id: nextId("component"),
+          type: "react_component",
+          kind: "function",
+          file: relPath,
+          line: ln,
+          name,
+          evidence: evidenceFor(lines, ln),
+        });
+      },
 
-      const initPath = path.get("init");
-      const hasJSX =
-        init.body.type === "JSXElement" ||
-        init.body.type === "JSXFragment" ||
-        containsJSX(initPath);
-      if (!hasJSX) return;
+      // const Foo = (...) => { ... } or const Foo = () => <jsx/>
+      VariableDeclarator(path) {
+        const id = path.node.id;
+        const init = path.node.init;
+        if (id.type !== "Identifier" || !/^[A-Z]/.test(id.name)) return;
+        if (!init || (init.type !== "ArrowFunctionExpression" && init.type !== "FunctionExpression")) return;
 
-      const ln = path.node.loc?.start.line;
-      facts.push({
-        id: nextId("component"),
-        type: "react_component",
-        kind: "function",
-        file: relPath,
-        line: ln,
-        name: id.name,
-        evidence: evidenceFor(lines, ln),
-      });
-    },
+        const initPath = path.get("init");
+        const hasJSX =
+          init.body.type === "JSXElement" ||
+          init.body.type === "JSXFragment" ||
+          containsJSX(initPath);
+        if (!hasJSX) return;
 
-    // class Foo extends Component / React.Component
-    ClassDeclaration(path) {
-      const superClass = path.node.superClass;
-      if (!superClass) return;
-      const isComponent =
-        (superClass.type === "Identifier" && superClass.name === "Component") ||
-        (superClass.type === "MemberExpression" &&
-          superClass.object.name === "React" &&
-          superClass.property.name === "Component");
-      if (!isComponent) return;
-      const name = path.node.id?.name;
-      if (!name) return;
-      const ln = path.node.loc?.start.line;
-      facts.push({
-        id: nextId("component"),
-        type: "react_component",
-        kind: "class",
-        file: relPath,
-        line: ln,
-        name,
-        evidence: evidenceFor(lines, ln),
-      });
-    },
-  });
+        const ln = path.node.loc?.start.line;
+        facts.push({
+          id: nextId("component"),
+          type: "react_component",
+          kind: "function",
+          file: relPath,
+          line: ln,
+          name: id.name,
+          evidence: evidenceFor(lines, ln),
+        });
+      },
+
+      // class Foo extends Component / React.Component
+      ClassDeclaration(path) {
+        const superClass = path.node.superClass;
+        if (!superClass) return;
+        const isComponent =
+          (superClass.type === "Identifier" && superClass.name === "Component") ||
+          (superClass.type === "MemberExpression" &&
+            superClass.object.name === "React" &&
+            superClass.property.name === "Component");
+        if (!isComponent) return;
+        const name = path.node.id?.name;
+        if (!name) return;
+        const ln = path.node.loc?.start.line;
+        facts.push({
+          id: nextId("component"),
+          type: "react_component",
+          kind: "class",
+          file: relPath,
+          line: ln,
+          name,
+          evidence: evidenceFor(lines, ln),
+        });
+      },
+    });
+  } catch (err) {
+    // traverse() threw on an otherwise-parseable file -- return whatever
+    // facts were collected before the failure rather than nothing. The
+    // caller (build.js) wraps this whole call too and is responsible for
+    // recording that this file didn't fully complete.
+  }
 
   return facts;
 }

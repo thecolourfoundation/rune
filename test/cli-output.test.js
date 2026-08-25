@@ -21,10 +21,11 @@ function tmpCleanProject() {
   return dir;
 }
 
-test("`rune scan` prints a security verdict line mentioning findings when a real secret is present", () => {
+test("`rune scan` prints a security findings summary with counts when a real secret is present", () => {
   const dir = tmpProjectWithSecret();
   const output = execFileSync("node", [runeBin, "scan", dir], { encoding: "utf8" });
-  assert.match(output, /\[rune\] security: 1 finding\(s\) worth a look/);
+  assert.match(output, /\[rune\] security findings: 1/);
+  assert.match(output, /high: 1/);
   assert.match(output, /AWS Access Key ID/);
 });
 
