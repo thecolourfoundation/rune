@@ -214,12 +214,37 @@ function printSecurityVerdict(findings) {
   }
 }
 
+/**
+ * A brief animated startup banner for the two long-running commands
+ * (watch, serve) -- this is the one moment a human actually watches the
+ * terminal rather than reading a one-shot result, so it's the natural
+ * place for a bit of visual identity. Plain ANSI codes, no color library
+ * dependency, consistent with the project staying dependency-light.
+ * Plays once (a few hundred ms), then gets out of the way -- deliberately
+ * NOT a continuous/idle animation, since a spinner that never stops reads
+ * as broken rather than polished, and burns cycles in a background daemon
+ * for no reason.
+ */
+async function printStartupBanner(label) {
+  const frames = ["◐", "◓", "◑", "◒"];
+  const dim = "\x1b[2m";
+  const bold = "\x1b[1m";
+  const reset = "\x1b[0m";
+
+  for (let i = 0; i < frames.length * 2; i++) {
+    process.stdout.write(`\r${dim}${frames[i % frames.length]}${reset} ${bold}RUNE${reset} ${dim}${label}${reset}`);
+    await new Promise((resolve) => setTimeout(resolve, 90));
+  }
+  process.stdout.write(`\r${bold}RUNE${reset}  ${label}\n`);
+}
+
 async function cmdWatch(rest) {
   const dir = resolveDir(rest);
   assertDirExists(dir);
 
   const { startWatch } = await import("../watch/index.js");
 
+  await printStartupBanner(`watching ${dir}`);
   console.log(`[rune] watching ${dir} for changes (Ctrl+C to stop)...`);
   const handle = startWatch(dir, {
     onRebuild: ({ ok, graph, error, reason }) => {
@@ -250,6 +275,8 @@ async function cmdServe(rest) {
     console.log(`[rune] no graph found — scanning ${dir} first...`);
     writeGraph(dir, buildGraph(dir));
   }
+
+  await printStartupBanner(`serving ${dir}`);
 
   try {
     const { startServer } = await import("../mcp/server.js");
