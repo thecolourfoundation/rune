@@ -28,6 +28,28 @@ function readConfig(rootDir) {
   }
 }
 
+/**
+ * Deduplicates security findings that describe the same underlying
+ * evidence -- same category, rule, file, and line. This surfaced as a real
+ * bug in benchmark data: the same finding appeared twice for the same
+ * file/line (e.g. two identical "redaction pattern" findings at the exact
+ * same location), inflating finding counts and undermining the benchmark's
+ * credibility. Dedup keeps the first occurrence (earliest id) and drops
+ * exact repeats; it does NOT merge near-duplicates with different rules or
+ * lines, since those may be genuinely distinct findings that happen to be
+ * close together.
+ */
+function deduplicateFindings(findings) {
+  const seen = new Map();
+  for (const finding of findings) {
+    const key = `${finding.category}|${finding.rule}|${finding.file}|${finding.line}`;
+    if (!seen.has(key)) {
+      seen.set(key, finding);
+    }
+  }
+  return Array.from(seen.values());
+}
+
 export function buildGraph(rootDir) {
   if (!fs.existsSync(rootDir) || !fs.statSync(rootDir).isDirectory()) {
     throw new Error(`"${rootDir}" is not a directory. Check the path and try again.`);
@@ -39,18 +61,20 @@ export function buildGraph(rootDir) {
   const nextId = createIdGenerator();
 
   const facts = [];
-  const securityFindings = [];
+  const rawSecurityFindings = [];
   for (const filePath of files) {
     const content = readFileSafe(filePath);
     if (content == null) continue;
     facts.push(...extractFileFacts(filePath, content, rootDir, nextId));
     facts.push(...extractExpressRoutes(filePath, content, rootDir, nextId));
-    securityFindings.push(...extractSecretFindings(filePath, content, rootDir, nextId));
-    securityFindings.push(...extractShellExecFindings(filePath, content, rootDir, nextId));
-    securityFindings.push(...extractWorkflowFindings(filePath, content, rootDir, nextId));
-    securityFindings.push(...extractDependencyFindings(filePath, content, rootDir, nextId));
+    rawSecurityFindings.push(...extractSecretFindings(filePath, content, rootDir, nextId));
+    rawSecurityFindings.push(...extractShellExecFindings(filePath, content, rootDir, nextId));
+    rawSecurityFindings.push(...extractWorkflowFindings(filePath, content, rootDir, nextId));
+    rawSecurityFindings.push(...extractDependencyFindings(filePath, content, rootDir, nextId));
   }
   facts.push(...extractNextRoutes(rootDir, nextId));
+
+  const securityFindings = deduplicateFindings(rawSecurityFindings);
 
   const derived = deriveUnderstanding(facts, projectInfo);
 

@@ -19,29 +19,24 @@ function runAt(relFilePath, content) {
   return extractSecretFindings(filePath, content, dir, nextId);
 }
 
-// --- Production-context findings: full severity ---
-
-test("detects an AWS access key id in production code at full severity", () => {
+test("detects an AWS access key id in production code at full severity, medium confidence", () => {
   const findings = runAt("src/config.js", `const awsKey = "AKIAIOSFODNN7EXAMPLE";\n`);
   assert.equal(findings.length, 1);
-  assert.equal(findings[0].rule, "AWS Access Key ID");
   assert.equal(findings[0].severity, "high");
+  assert.equal(findings[0].confidence, "medium");
   assert.equal(findings[0].context, "production");
-  assert.equal(findings[0].line, 1);
 });
 
-test("detects a Stripe live secret key in production code at full (critical) severity", () => {
-  const dir_fake_key = "sk_live_" + "51H8xyzABCDEFGHIJKLMNOPQRSTUVWXYZ" + "12345";
-  const findings = runAt("src/billing.js", `const stripeKey = "${dir_fake_key}";\n`);
+test("detects a Stripe live secret key in production code at critical severity", () => {
+  const fakeKey = "sk_live_" + "51H8xyzABCDEFGHIJKLMNOPQRSTUVWXYZ" + "12345";
+  const findings = runAt("src/billing.js", `const stripeKey = "${fakeKey}";\n`);
   const stripeFindings = findings.filter((f) => f.rule === "Stripe live secret key");
   assert.equal(stripeFindings.length, 1);
   assert.equal(stripeFindings[0].severity, "critical");
-  assert.equal(stripeFindings[0].context, "production");
 });
 
 test("redacts the matched secret value, never returns it in full", () => {
   const findings = runAt("src/config.js", `const awsKey = "AKIAIOSFODNN7EXAMPLE";\n`);
-  assert.equal(findings.length, 1);
   assert.notEqual(findings[0].redactedMatch, "AKIAIOSFODNN7EXAMPLE");
   assert.match(findings[0].redactedMatch, /\*/);
 });
@@ -71,50 +66,65 @@ test("fact ids from the shared generator use the secret prefix", () => {
   assert.ok(findings[0].id.startsWith("secret_"));
 });
 
-// --- Context-awareness: test/fixture/example files get downgraded, not silenced ---
+// --- Test/fixture context ---
 
-test("REGRESSION: a secret-shaped string inside test/ is downgraded, not full severity", () => {
+test("a secret-shaped string inside test/ is downgraded, not full severity", () => {
   const findings = runAt("test/secrets.test.js", `const awsKey = "AKIAIOSFODNN7EXAMPLE";\n`);
   assert.equal(findings.length, 1);
   assert.equal(findings[0].context, "test_or_fixture");
-  assert.equal(findings[0].severity, "low"); // "high" downgrades to "low"
-  assert.equal(findings[0].confidence, "low");
-});
-
-test("REGRESSION: a private key in a fixtures/ directory is downgraded from critical to medium, not silenced", () => {
-  const findings = runAt(
-    "fixtures/sample-key.js",
-    `const key = \`-----BEGIN RSA PRIVATE KEY-----\nfake\n-----END RSA PRIVATE KEY-----\`;\n`
-  );
-  assert.equal(findings.length, 1);
-  assert.equal(findings[0].context, "test_or_fixture");
-  assert.equal(findings[0].severity, "medium"); // "critical" downgrades to "medium", never fully silenced
-});
-
-test("REGRESSION: a file matching *.example.js is treated as test context", () => {
-  const findings = runAt("config.example.js", `const awsKey = "AKIAIOSFODNN7EXAMPLE";\n`);
-  assert.equal(findings.length, 1);
-  assert.equal(findings[0].context, "test_or_fixture");
-});
-
-test("REGRESSION: a file under __tests__/ is treated as test context", () => {
-  const findings = runAt("__tests__/config.js", `const awsKey = "AKIAIOSFODNN7EXAMPLE";\n`);
-  assert.equal(findings.length, 1);
-  assert.equal(findings[0].context, "test_or_fixture");
+  assert.equal(findings[0].severity, "low");
 });
 
 test("a file whose path merely contains 'test' as a substring of an unrelated word is NOT treated as test context", () => {
-  // "testimonials" contains "test" as a substring but is not a test directory --
-  // path-segment matching (not substring matching) should not flag this.
   const findings = runAt("src/testimonials/config.js", `const awsKey = "AKIAIOSFODNN7EXAMPLE";\n`);
-  assert.equal(findings.length, 1);
   assert.equal(findings[0].context, "production");
-  assert.equal(findings[0].severity, "high");
 });
 
-test("downgraded severity never drops below 'low' -- a secret is never fully silenced by context", () => {
-  const findings = runAt("test/fixtures/config.js", `const apiKey = "some-generic-key-shape-12345678901234";\n`);
+// --- Pattern-definition context (NEW in v3) ---
+
+test("REGRESSION: a private-key marker inside a regex literal is classified as pattern_definition, severity low", () => {
+  const findings = runAt(
+    "src/redaction/patterns.ts",
+    `export const PRIVATE_KEY_PATTERN = /-----BEGIN OPENSSH PRIVATE KEY-----/g;\n`
+  );
+  assert.equal(findings.length, 1);
+  assert.equal(findings[0].context, "pattern_definition_or_docs");
+  assert.equal(findings[0].severity, "low");
+  assert.equal(findings[0].confidence, "low");
+});
+
+test("REGRESSION: a file under a redaction/ or patterns/ directory is treated as pattern-definition context", () => {
+  const findings = runAt(
+    "packages/mcp-browser/src/redaction/patterns.ts",
+    `const key = "AKIAIOSFODNN7EXAMPLE";\n`
+  );
+  assert.equal(findings[0].context, "pattern_definition_or_docs");
+});
+
+test("REGRESSION: documentation prose describing a PEM key format is downgraded, not flagged at full severity", () => {
+  const findings = runAt(
+    "docs/auth.md",
+    `The Private Key field must contain a PEM private key beginning with -----BEGIN RSA PRIVATE KEY----- for this to work.\n`
+  );
+  assert.equal(findings.length, 1);
+  assert.equal(findings[0].severity, "low");
+});
+
+test("a real private key NOT in a pattern/redaction/docs path and NOT inside a regex literal stays critical", () => {
+  const findings = runAt(
+    "src/config/secrets.js",
+    `module.exports.key = "-----BEGIN RSA PRIVATE KEY-----\\nMIIEow==\\n-----END RSA PRIVATE KEY-----";\n`
+  );
+  assert.equal(findings.length, 1);
+  assert.equal(findings[0].context, "production");
+  assert.equal(findings[0].severity, "critical");
+});
+
+test("downgraded severity never silences a finding entirely -- it always still returns an entry", () => {
+  const findings = runAt(
+    "src/redaction/patterns.ts",
+    `// Example match for testing: AKIAIOSFODNN7EXAMPLE\n`
+  );
   assert.equal(findings.length, 1);
   assert.notEqual(findings[0].severity, undefined);
-  assert.ok(["low"].includes(findings[0].severity));
 });

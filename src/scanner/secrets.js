@@ -1,25 +1,5 @@
 import path from "node:path";
 
-/**
- * Secret-exposure detector — pattern-based, not AST, because secrets are
- * string-literal shapes (API keys, tokens, private keys), not syntax
- * structures. Every finding carries file/line/evidence, same trust model
- * as the rest of Rune: nothing is asserted without a quoted match.
- *
- * v2: context-aware. A benchmark run showed 50 secret_exposure findings
- * across a 25-repo sample, and a meaningful share of these are test
- * fixtures, example credentials, and documentation -- not real leaked
- * secrets. A pattern match alone doesn't distinguish "this is Rune's own
- * test fixture for the AWS-key detector" from "someone actually committed
- * a live key." Path-based context is the cheapest reliable signal
- * available without parsing file purpose semantically.
- *
- * IMPORTANT: this downgrades severity/confidence for likely-test files --
- * it never fully suppresses a finding. A real secret accidentally left in
- * a test file is still worth flagging, just not at the same alarm level as
- * one in production source.
- */
-
 const SECRET_PATTERNS = [
   { name: "AWS Access Key ID", re: /\bAKIA[0-9A-Z]{16}\b/g, severity: "high" },
   { name: "AWS Secret Access Key (assignment)", re: /aws_secret_access_key\s*[:=]\s*['"][A-Za-z0-9/+=]{40}['"]/gi, severity: "high" },
@@ -45,10 +25,6 @@ const PLACEHOLDER_DENYLIST = new Set([
   "example-key-do-not-use",
 ]);
 
-// Path segments and filename patterns that indicate test/fixture/example
-// context. Deliberately broad but not so broad it matches production code
-// that merely has "test" as a substring of something unrelated -- checked
-// against path segments and known suffixes, not a raw substring match.
 const TEST_CONTEXT_PATH_SEGMENTS = new Set([
   "test", "tests", "__tests__", "spec", "specs",
   "fixture", "fixtures", "example", "examples",
@@ -58,6 +34,11 @@ const TEST_CONTEXT_PATH_SEGMENTS = new Set([
 
 const TEST_CONTEXT_FILENAME_RE = /\.(test|spec|fixture|example|sample|mock)\.[jt]sx?$/i;
 
+const PATTERN_DEFINITION_PATH_SEGMENTS = new Set([
+  "redaction", "redactions", "patterns", "detectors", "detection",
+  "scanner", "scanners", "sanitize", "sanitizer", "masking",
+]);
+
 function isTestContext(relPath) {
   const normalized = relPath.replace(/\\/g, "/");
   const segments = normalized.split("/").map((s) => s.toLowerCase());
@@ -66,11 +47,34 @@ function isTestContext(relPath) {
   return false;
 }
 
-// Downgrades a severity one tier when in test context. Never drops below
-// "low" -- a real secret is still worth a glance even in a test file, and
-// never silently disappears.
+function pathSuggestsPatternDefinition(relPath) {
+  const normalized = relPath.replace(/\\/g, "/");
+  const segments = normalized.split("/").map((s) => s.toLowerCase());
+  return segments.some((s) => PATTERN_DEFINITION_PATH_SEGMENTS.has(s));
+}
+
+function looksLikeRegexLiteral(lineText, matchIndexInLine) {
+  const before = lineText.slice(0, matchIndexInLine);
+  const after = lineText.slice(matchIndexInLine);
+  const hasOpeningSlash = /\/[^/\s][^/]*$/.test(before) || /=\s*\/[^/]*$/.test(before);
+  const hasClosingSlash = /\/[a-z]*\s*[,;)\]]?\s*$/i.test(after.split("\n")[0]);
+  return hasOpeningSlash && hasClosingSlash;
+}
+
+function looksLikeProse(lineText) {
+  const words = lineText.match(/\b[a-z]{3,}\b/g) || [];
+  return words.length >= 6 && !/[:=]\s*['"`]/.test(lineText);
+}
+
 const SEVERITY_DOWNGRADE = {
   critical: "medium",
+  high: "low",
+  medium: "low",
+  low: "low",
+};
+
+const PATTERN_DEFINITION_DOWNGRADE = {
+  critical: "low",
   high: "low",
   medium: "low",
   low: "low",
@@ -91,6 +95,7 @@ export function extractSecretFindings(filePath, content, rootDir, nextId) {
   const findings = [];
   const lines = content.split("\n");
   const testContext = isTestContext(relPath);
+  const pathSuggestsPattern = pathSuggestsPatternDefinition(relPath);
 
   const offsets = [0];
   for (let i = 0; i < content.length; i++) {
@@ -113,7 +118,31 @@ export function extractSecretFindings(filePath, content, rootDir, nextId) {
       if (PLACEHOLDER_DENYLIST.has(matchedValue.toLowerCase())) continue;
 
       const ln = lineOf(m.index);
-      const severity = testContext ? SEVERITY_DOWNGRADE[pattern.severity] : pattern.severity;
+      const lineText = lines[ln - 1] || "";
+      const lineStartIndex = offsets[ln - 1];
+      const matchIndexInLine = m.index - lineStartIndex;
+
+      const isRegexLiteral = looksLikeRegexLiteral(lineText, matchIndexInLine);
+      const isProse = looksLikeProse(lineText);
+      const isPatternDefinition = pathSuggestsPattern || isRegexLiteral || isProse;
+
+      let severity;
+      let confidence;
+      let context;
+
+      if (isPatternDefinition) {
+        severity = PATTERN_DEFINITION_DOWNGRADE[pattern.severity];
+        confidence = "low";
+        context = "pattern_definition_or_docs";
+      } else if (testContext) {
+        severity = SEVERITY_DOWNGRADE[pattern.severity];
+        confidence = "low";
+        context = "test_or_fixture";
+      } else {
+        severity = pattern.severity;
+        confidence = "medium";
+        context = "production";
+      }
 
       findings.push({
         id: nextId("secret"),
@@ -121,12 +150,12 @@ export function extractSecretFindings(filePath, content, rootDir, nextId) {
         category: "secret_exposure",
         rule: pattern.name,
         severity,
+        confidence,
         file: relPath,
         line: ln,
         evidence: evidenceAt(lines, ln),
         redactedMatch: redact(matchedValue),
-        confidence: testContext ? "low" : "medium",
-        context: testContext ? "test_or_fixture" : "production",
+        context,
       });
     }
   }
