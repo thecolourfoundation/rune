@@ -1,10 +1,12 @@
 Rune
 
-Persistent codebase intelligence for AI coding agents.
+Persistent codebase intelligence for AI coding agents
 
-Rune continuously maps your codebase and exposes an evidence-backed understanding through MCP — so AI agents can understand your software without starting from zero every session.
+Rune continuously maps your codebase and exposes an evidence-backed understanding through MCP, enabling AI agents to work with your software without rebuilding context from scratch.
 
 Claude Code · Cursor · Codex · Claude Desktop · MCP
+
+""License" (https://img.shields.io/badge/license-MIT-blue.svg)" (LICENSE)
 
 ---
 
@@ -14,16 +16,16 @@ AI coding agents are powerful.
 
 But every new session has the same problem:
 
-They have to rediscover your codebase.
+«They have to rediscover your codebase.»
 
-They read files. Rebuild context. Guess relationships. And sometimes give you an answer without making it obvious where that answer came from.
+They read files, reconstruct context, infer relationships, and build a mental model of your project before they can reliably answer questions.
 
-Rune gives your agents a persistent, queryable understanding of your codebase.
+Rune gives AI agents a persistent, queryable understanding of your codebase.
 
 Without Rune| With Rune
 AI rereads the repository| AI queries an existing understanding
 Context is rebuilt every session| Understanding persists
-Agents can build different mental models| Agents query the same project model
+Each agent builds its own mental model| Agents can query the same project model
 Answers can be difficult to verify| Answers can point to source evidence
 Manual rescanning| "rune watch" keeps the model current
 
@@ -31,11 +33,11 @@ Manual rescanning| "rune watch" keeps the model current
 
 ---
 
-See it in action
+See It in Action
 
 Ask your AI agent:
 
-«"Where is the UserCard component defined?"»
+«Where is the "UserCard" component defined?»
 
 Rune can provide:
 
@@ -46,15 +48,17 @@ UserCard
 └── evidence:
     export function UserCard({ user }) {
 
-The important part isn't just the answer.
+The value isn't only the answer.
 
 It's the evidence behind the answer.
 
-Rune is designed so that code intelligence can be inspected instead of blindly trusted.
+Rune is designed to make code intelligence inspectable rather than blindly trusted.
 
 ---
 
-Install
+Get Started
+
+Installation
 
 Node.js
 
@@ -64,9 +68,9 @@ Python
 
 pip install north-rune
 
-Both distributions expose the "rune" CLI.
+Both distributions provide the "rune" CLI.
 
-«Note: If you install both distributions globally, your shell will use whichever "rune" executable appears first on your "PATH". Use "which -a rune" to see which one is being executed.»
+«Note: If both distributions are installed globally, your shell will use whichever "rune" executable appears first on your "PATH". Run "which -a rune" to see which executable is being used.»
 
 ---
 
@@ -88,66 +92,74 @@ Start the MCP server:
 
 rune serve
 
-That's it.
-
-Rune now maintains an understanding of your project and can expose it to compatible AI clients through MCP.
+Rune will now maintain an understanding of your project and expose it to compatible AI clients through MCP.
 
 One-time scan
 
-If you don't need a watcher:
+Don't need continuous monitoring?
 
 rune scan .
 
 ---
 
-How it works
+How Rune Works
 
-                YOUR CODEBASE
-                     │
-                     ▼
-               ┌───────────┐
-               │    Rune   │
-               │  Scanner  │
-               └─────┬─────┘
-                     │
-                     ▼
-            Understanding Graph
-                     │
-             ┌───────┴───────┐
-             │               │
-           Facts          Derived
-                         understanding
-             │               │
-             └───────┬───────┘
-                     │
-                     ▼
-                MCP Server
-                     │
-        ┌────────────┼────────────┐
-        ▼            ▼            ▼
-    Claude Code    Cursor       Codex
+                    YOUR CODEBASE
+                         │
+                         ▼
+                   ┌───────────┐
+                   │   Rune    │
+                   │  Scanner  │
+                   └─────┬─────┘
+                         │
+                         ▼
+                UNDERSTANDING GRAPH
+                         │
+                  ┌──────┴──────┐
+                  │             │
+                FACTS        DERIVED
+                           UNDERSTANDING
+                  │             │
+                  └──────┬──────┘
+                         │
+                         ▼
+                    MCP SERVER
+                         │
+          ┌──────────────┼──────────────┐
+          ▼              ▼              ▼
+      Claude Code      Cursor         Codex
+
+Facts → Understanding → Evidence
 
 Rune separates facts from derived understanding.
 
-A fact might be:
+A fact might look like:
 
 components/UserCard.jsx
 line 3
 defines UserCard
 
-A derived conclusion can be built from multiple facts.
+A derived conclusion can be constructed from multiple facts.
 
-The result is an inspectable chain from:
+The result is an inspectable chain:
 
-source → fact → understanding → answer
+Source
+  ↓
+Fact
+  ↓
+Understanding
+  ↓
+AI answer
+  ↓
+Evidence
 
 ---
 
-Built for AI coding agents
+AI Agent Integration
 
 Rune is designed for workflows where multiple AI agents need to understand the same codebase.
 
-Compatible with MCP clients
+Supported MCP Clients
 
 - Claude Code
 - Cursor
@@ -155,11 +167,11 @@ Compatible with MCP clients
 - Claude Desktop
 - Custom MCP clients
 
-Instead of every agent rebuilding its own mental model, Rune provides a shared project understanding.
+Instead of requiring every agent to reconstruct the repository independently, Rune provides a shared project understanding through MCP.
 
 ---
 
-Connect Rune through MCP
+Connect Rune Through MCP
 
 Rune exposes its codebase understanding through the Model Context Protocol.
 
@@ -184,9 +196,9 @@ Once connected, your AI client can query Rune's understanding of the project.
 
 ---
 
-What Rune understands
+What Rune Understands
 
-Rune currently focuses on common JavaScript/TypeScript application structures.
+Rune currently focuses on common JavaScript and TypeScript application structures.
 
 Frameworks
 
@@ -194,7 +206,7 @@ Frameworks
 - Next.js
 - Express
 
-Code intelligence
+Code Intelligence
 
 - React components
 - Next.js pages
@@ -206,17 +218,17 @@ Code intelligence
 - Derived conclusions
 - Source evidence
 
-Support is intentionally focused while the project is still evolving.
+Support is intentionally focused while the project continues to evolve.
 
 ---
 
-Evidence-backed answers
+Evidence-Backed Answers
 
-Most AI systems give you an answer.
+Most AI systems provide an answer.
 
-Rune aims to give you:
+Rune aims to provide:
 
-the answer + the evidence behind it.
+«The answer + the evidence supporting it.»
 
 For example:
 
@@ -239,9 +251,9 @@ This makes it easier to inspect what Rune believes and why.
 
 ---
 
-MCP tools
+MCP Tools
 
-Rune currently exposes tools for querying the project understanding.
+Rune exposes tools for querying the project's understanding.
 
 Tool| Purpose
 "rune_get_overview"| Get an architecture overview
@@ -254,7 +266,7 @@ Tool| Purpose
 
 ---
 
-CLI
+CLI Reference
 
 Command| Description
 "rune init [dir]"| Initialize Rune in a project
@@ -266,7 +278,9 @@ Command| Description
 
 ---
 
-Read-only by design
+Trust & Safety
+
+Read-Only by Design
 
 Rune does not modify your source code.
 
@@ -276,13 +290,39 @@ It maintains its own project data under:
 
 Your source remains yours.
 
-Rune's job is to read, understand, and explain.
+Rune's role is simple:
 
-If you expose Rune's generated graph or source evidence to an AI client, remember that it can contain information from your codebase.
+«Read. Understand. Explain.»
+
+If you expose Rune's generated graph or source evidence to an AI client, remember that it may contain information from your codebase.
 
 ---
 
-Who is Rune for?
+Why Evidence Matters
+
+AI-generated answers can sound convincing even when they're wrong.
+
+Rune's approach is different:
+
+             AI ANSWER
+                 │
+                 ▼
+             CONCLUSION
+                 │
+                 ▼
+              EVIDENCE
+                 │
+          ┌──────┴──────┐
+          ▼             ▼
+       FILE            LINE
+
+The goal isn't to make AI magically infallible.
+
+The goal is to make its understanding inspectable.
+
+---
+
+Who Is Rune For?
 
 Rune is built for developers who:
 
@@ -293,13 +333,13 @@ Rune is built for developers who:
 - Want persistent project context
 - Want AI answers that can be traced back to source
 
-Rune is especially useful when:
+Rune Becomes More Useful As Your Project Grows
 
-Your project gets bigger
+Project gets bigger
         ↓
-Your context gets harder to maintain
+Context becomes harder to maintain
         ↓
-You use more AI agents
+More AI agents enter the workflow
         ↓
 Each agent needs to understand the same code
         ↓
@@ -307,7 +347,7 @@ Rune becomes the shared understanding layer
 
 ---
 
-What Rune is not
+What Rune Is Not
 
 Rune is not:
 
@@ -320,30 +360,30 @@ Rune is not:
 
 Rune focuses on one problem:
 
-«Helping AI agents understand an existing codebase with persistent, inspectable context.»
+«Helping AI agents understand an existing codebase through persistent, inspectable context.»
 
 ---
 
-Current status
+Current Status
 
 Rune is early-stage software.
 
-Today, the scanner uses lightweight heuristic and regex-based extraction rather than a complete AST parser.
+The scanner currently uses lightweight, heuristic, and regex-based extraction rather than a complete AST parser.
 
-That keeps the system lightweight and fast, while preserving file, line, and evidence information.
+This keeps the system lightweight and fast while preserving file, line, and evidence information.
 
-It also means some unusual code patterns may not be detected yet.
+It also means some unusual code patterns may not yet be detected.
 
-For example:
+Examples include:
 
 - Components created without recognizable JSX patterns
 - Dynamically constructed routes
 - Complex re-export chains
 - Framework-specific patterns outside current support
 
-If Rune gets something wrong, please open an issue.
+If Rune produces an incorrect result, please open an issue.
 
-Real-world codebases are exactly how the extractor gets better.
+Real-world codebases are essential to improving the extractor.
 
 ---
 
@@ -372,21 +412,19 @@ Trust
 - [ ] Reviewable dependency insights
 - [ ] Security-aware codebase analysis
 
-The principle stays the same:
-
 «Read first. Understand. Explain. Never silently modify your code.»
 
 ---
 
-Current limitations
+Current Limitations
 
-Rune is intentionally early and focused.
+Rune is intentionally early-stage and focused.
 
 Known limitations include:
 
 - Limited framework coverage
-- Some extraction relies on heuristics
-- Cross-file Express route prefixes are not fully resolved
+- Extraction that relies partly on heuristics
+- Cross-file Express route prefixes that are not fully resolved
 - "rune watch" currently performs a full rebuild after changes rather than a true incremental diff
 - MCP currently uses a single-process stdio transport
 
@@ -396,20 +434,20 @@ These limitations are part of the current development roadmap.
 
 Development
 
-Clone the repository:
+Clone
 
 git clone https://github.com/thecolourfoundation/rune.git
 cd rune
 
-Install dependencies:
+Install Dependencies
 
 npm install
 
-Run tests:
+Run Tests
 
 npm test
 
-Verify MCP:
+Verify MCP
 
 npm run verify:mcp
 
@@ -421,25 +459,25 @@ npm run verify:mcp -- /path/to/your-project
 
 Contributing
 
-Rune is early.
+Rune is early-stage software.
 
 If you're building with AI coding agents, MCP, developer tooling, or code intelligence, real-world feedback is valuable.
 
-Useful contributions include:
+Useful Contributions
 
-- Reporting extraction bugs
-- Adding tests and fixtures
-- Improving framework detection
-- Improving MCP tools
-- Adding new evidence-backed queries
-- Testing Rune against real-world repositories
-- Improving documentation
+- Report extraction bugs
+- Add tests and fixtures
+- Improve framework detection
+- Improve MCP tools
+- Add evidence-backed queries
+- Test Rune against real-world repositories
+- Improve documentation
 
-If you find something Rune doesn't understand:
+Found something Rune doesn't understand?
 
 Show us the code.
 
-That's how we make the understanding layer better.
+That's how we improve the understanding layer.
 
 ---
 
@@ -462,4 +500,4 @@ Rune is the context layer between your codebase and your AI agents.
 
 License
 
-MIT3
+MIT
