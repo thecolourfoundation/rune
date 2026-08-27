@@ -139,5 +139,40 @@ export function buildTools(getGraph, rootDir) {
         return { entries };
       },
     },
+    {
+      name: "rune_get_security_findings",
+      title: "Get security findings",
+      description:
+        "Get all security findings Rune has detected in this project: exposed secrets, dangerous shell execution, risky CI/CD workflow permissions, and typosquat-shaped dependencies. Use this before merging a PR or reviewing a codebase for security risk -- this is the single call that answers 'are there security concerns in this repo.' Every finding cites file, line, matched evidence, severity, and confidence -- nothing is asserted without a source. Filter by severity to focus on what matters first.",
+      inputSchema: {
+        severity: z
+          .enum(["critical", "high", "medium", "low"])
+          .optional()
+          .describe("Filter to only this severity level. Omit to get all findings across all severities."),
+        category: z
+          .enum(["secret_exposure", "dangerous_shell_exec", "ci_permission_risk", "dependency_risk"])
+          .optional()
+          .describe("Filter to only this finding category. Omit to get all categories."),
+      },
+      handler: async ({ severity, category }) => {
+        const graph = getGraph();
+        let findings = graph.securityFindings || [];
+        if (severity) findings = findings.filter((f) => f.severity === severity);
+        if (category) findings = findings.filter((f) => f.category === category);
+
+        const bySeverity = { critical: 0, high: 0, medium: 0, low: 0 };
+        for (const f of graph.securityFindings || []) {
+          if (bySeverity[f.severity] !== undefined) bySeverity[f.severity] += 1;
+        }
+
+        return {
+          findings,
+          totalMatchingFilter: findings.length,
+          totalAllFindings: (graph.securityFindings || []).length,
+          summaryAllFindings: bySeverity,
+          note: "Each finding's 'confidence' field indicates how sure Rune is this is a real issue (not a false positive from test/fixture/pattern-definition context) -- low-confidence findings are still real matches, just less certain to be exploitable production code.",
+        };
+      },
+    },
   ];
 }
