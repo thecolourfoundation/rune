@@ -1,192 +1,465 @@
-# Rune
+Rune
 
-**The Software Intelligence Runtime.**
+Persistent codebase intelligence for AI coding agents.
 
-Cursor, Codex, Claude Code — they all read your codebase cold, every session, and forget everything when it ends. Rune is the thing that runs underneath them, continuously, so every session starts already knowing your codebase instead of re-deriving it.
+Rune continuously maps your codebase and exposes an evidence-backed understanding through MCP — so AI agents can understand your software without starting from zero every session.
 
-**Without Rune:** every new AI session reads your files cold, reasons and answers, then forgets everything when the session ends — the next session starts back at zero.
-
-**With Rune:** `rune watch` keeps an understanding graph current in the background as you edit. Every new AI session queries that graph over MCP instead of re-reading files cold, and gets an evidence-backed answer cited to file + line.
-
-
-**[What it does](#what-rune-does) · [How it works](#how-it-works) · [Install](#install) · [Quickstart](#quickstart) · [See real output](#what-this-actually-looks-like) · [CLI](#cli) · [MCP tools](#mcp-tools-exposed) · [Limitations](#current-scope-and-honest-limitations) · [Security](#security-notes)**
+Claude Code · Cursor · Codex · Claude Desktop · MCP
 
 ---
 
-## What Rune does
+Why Rune?
 
-- **Always current** — `rune watch` keeps the understanding graph up to date as you edit, not just when someone remembers to re-run a scan. It's a runtime, not a one-shot CLI.
-- **Persistent** — understanding survives past any single session. Every AI you connect starts already knowing your software, instead of re-reading it cold.
-- **Shared** — one understanding, many AI clients. Claude, GPT, Gemini, whatever you're running next month — they all ask the same Rune instance instead of maintaining separate, inconsistent mental models of your code.
-- **Explainable** — nothing Rune tells an AI is a black box. Ask it to justify any claim and it shows the exact source location behind it.
-- **Read-only, suggest-only** — Rune never writes to your source. That's the actual moat: everything else in this space is racing toward autonomous code-writing; Rune stays strictly on the reading, understanding, and (later) suggesting side of that line. It never becomes the thing you have to double-check for silently breaking your code.
+AI coding agents are powerful.
 
-## How it works
+But every new session has the same problem:
 
-Two layers, and every conclusion traces back to evidence — not asserted, always inspectable:
+They have to rediscover your codebase.
 
-```mermaid
-flowchart LR
-    F1["Fact: import react, UserCard.jsx line 1"] --> D["Derived: React component UserCard"]
-    F2["Fact: function UserCard, UserCard.jsx line 3"] --> D
-    F3["Fact: useState hook, UserCard.jsx line 4"] --> D
-    D --> C["AI answer: this project has a UserCard component"]
-    C -.->|"rune_explain"| F1
-    C -.->|"rune_explain"| F2
-    C -.->|"rune_explain"| F3
-```
+They read files. Rebuild context. Guess relationships. And sometimes give you an answer without making it obvious where that answer came from.
 
-Call `rune explain <id>` (or the `rune_explain` MCP tool) on anything and get that chain back. An AI using Rune isn't guessing about your architecture — and neither is Rune.
+Rune gives your agents a persistent, queryable understanding of your codebase.
 
-## Install
+Without Rune| With Rune
+AI rereads the repository| AI queries an existing understanding
+Context is rebuilt every session| Understanding persists
+Agents can build different mental models| Agents query the same project model
+Answers can be difficult to verify| Answers can point to source evidence
+Manual rescanning| "rune watch" keeps the model current
 
-```bash
-npm install @pypl100/rune
-```
+«One codebase. One persistent understanding. Many AI agents.»
 
-*A Python distribution exists at [`python/`](python/) with full feature parity (same fact/derived model, same detectors, same MCP tool surface) for teams who'd rather not require Node.js — published as `pip install north-rune` (the CLI command is still `rune`; see [python/README.md](python/README.md)).*
+---
 
-> **If you install both** (`@pypl100/rune` via npm globally, and `north-rune` via pip) on the same machine, only one `rune` command will actually be on your `PATH` — whichever your shell finds first, not whichever you installed most recently. Check with `which -a rune`; if it lists more than one path, that's why. There's no version-detection magic here — it's plain OS `PATH` resolution, same as any two unrelated tools that happen to install a same-named binary. If you need a specific one, invoke it by its full path rather than relying on bare `rune`.
+See it in action
 
-## Quickstart
+Ask your AI agent:
 
-```bash
+«"Where is the UserCard component defined?"»
+
+Rune can provide:
+
+UserCard
+├── type: react_component
+├── file: components/UserCard.jsx
+├── line: 3
+└── evidence:
+    export function UserCard({ user }) {
+
+The important part isn't just the answer.
+
+It's the evidence behind the answer.
+
+Rune is designed so that code intelligence can be inspected instead of blindly trusted.
+
+---
+
+Install
+
+Node.js
+
+npm install -g @pypl100/rune
+
+Python
+
+pip install north-rune
+
+Both distributions expose the "rune" CLI.
+
+«Note: If you install both distributions globally, your shell will use whichever "rune" executable appears first on your "PATH". Use "which -a rune" to see which one is being executed.»
+
+---
+
+Quickstart
+
+Navigate to your project:
+
 cd your-project
-npm install -g @pypl100/rune   # or: npx -p @pypl100/rune rune <command>
-rune init      # sets up Rune in your project
-rune watch &    # keeps the understanding current in the background as you work
-rune serve      # starts an MCP server exposing it to any AI client
-```
 
-`rune watch` is the recommended default — it's what makes Rune a runtime instead of a tool you have to remember to re-run. (For CI or a one-shot check, use `rune scan` instead.)
+Initialize Rune:
 
-```mermaid
-sequenceDiagram
-    participant Dev as You
-    participant Watch as rune watch
-    participant Graph as graph file
-    participant AI as AI client (Claude Code, Cursor, etc.)
+rune init
 
-    Dev->>Watch: save a file
-    Watch->>Watch: detect change (debounced)
-    Watch->>Graph: rebuild + write
-    AI->>Graph: rune_search / rune_explain (via rune serve)
-    Graph-->>AI: current, evidence-backed answer
-```
+Start the watcher:
 
-Point any MCP-compatible client (Claude Desktop, Claude Code, custom agents, etc.) at the `rune serve` process. Every connected AI shares the same, continuously current understanding — no restart, no manual rescan.
+rune watch &
 
-Example MCP client config entry:
+Start the MCP server:
 
-```json
+rune serve
+
+That's it.
+
+Rune now maintains an understanding of your project and can expose it to compatible AI clients through MCP.
+
+One-time scan
+
+If you don't need a watcher:
+
+rune scan .
+
+---
+
+How it works
+
+                YOUR CODEBASE
+                     │
+                     ▼
+               ┌───────────┐
+               │    Rune   │
+               │  Scanner  │
+               └─────┬─────┘
+                     │
+                     ▼
+            Understanding Graph
+                     │
+             ┌───────┴───────┐
+             │               │
+           Facts          Derived
+                         understanding
+             │               │
+             └───────┬───────┘
+                     │
+                     ▼
+                MCP Server
+                     │
+        ┌────────────┼────────────┐
+        ▼            ▼            ▼
+    Claude Code    Cursor       Codex
+
+Rune separates facts from derived understanding.
+
+A fact might be:
+
+components/UserCard.jsx
+line 3
+defines UserCard
+
+A derived conclusion can be built from multiple facts.
+
+The result is an inspectable chain from:
+
+source → fact → understanding → answer
+
+---
+
+Built for AI coding agents
+
+Rune is designed for workflows where multiple AI agents need to understand the same codebase.
+
+Compatible with MCP clients
+
+- Claude Code
+- Cursor
+- Codex
+- Claude Desktop
+- Custom MCP clients
+
+Instead of every agent rebuilding its own mental model, Rune provides a shared project understanding.
+
+---
+
+Connect Rune through MCP
+
+Rune exposes its codebase understanding through the Model Context Protocol.
+
+Example configuration:
+
 {
   "mcpServers": {
     "rune": {
       "command": "npx",
-      "args": ["-p", "@pypl100/rune", "rune", "serve", "/absolute/path/to/your-project"]
+      "args": [
+        "-p",
+        "@pypl100/rune",
+        "rune",
+        "serve",
+        "/absolute/path/to/your-project"
+      ]
     }
   }
 }
-```
 
-## What this actually looks like
-
-Real output, from the fixture project in this repo — not staged:
-
-```
-$ rune scan .
-[rune] scanned 4 file(s) in 34ms
-[rune] facts: 10, derived conclusions: 4
-[rune] graph written to /project/.rune/graph.json
-
-$ rune explain component_2
-{
-  "kind": "function",
-  "id": "component_2",
-  "type": "react_component",
-  "file": "components/UserCard.jsx",
-  "line": 3,
-  "name": "UserCard",
-  "evidence": "export function UserCard({ user }) {"
-}
-```
-
-That's the whole trust model in one example: Rune doesn't just say "there's a `UserCard` component" — it points at the exact file, the exact line, and the exact text it matched. Ask it to explain anything, and you get the receipts, not a claim.
-
-## CLI
-
-| Command | What it does |
-|---|---|
-| `rune init [dir]` | Sets up `.rune/` in the current (or given) project |
-| `rune scan [dir]` | Builds (or rebuilds) the understanding graph, once |
-| `rune watch [dir]` | Keeps the understanding graph current as files change (Ctrl+C to stop) |
-| `rune serve [dir]` | Starts the MCP server |
-| `rune explain <id>` | Prints the evidence trail behind any fact or conclusion |
-| `rune --version` | Prints the installed Rune version |
-
-## Configuration
-
-`rune init` writes `.rune/config.json`. The only setting today is `ignore` — an array of directory/file names to exclude from scanning, on top of the built-in defaults (`node_modules`, `.git`, `dist`, `build`, `.next`, `coverage`, etc., and all dotfiles unconditionally):
-
-```json
-{
-  "ignore": ["legacy", "vendor"],
-  "version": 1
-}
-```
-
-## MCP tools exposed
-
-| Tool | Purpose |
-|---|---|
-| `rune_get_overview` | Architecture summary — start here |
-| `rune_list_components` | All detected React components |
-| `rune_list_routes` | Unified Express + Next.js route list |
-| `rune_search` | Find facts/derived nodes by name, file, or route substring |
-| `rune_explain` | Full evidence trail for any id |
-| `rune_get_file_dependencies` | Internal import graph for a file |
-| `rune_rescan` | Re-scan on demand after code changes |
-
-## Current scope and honest limitations
-
-Rune is intentionally narrow right now:
-
-- **Framework support:** React, Next.js (pages + app router), Express. Everything else gets generic file/import scanning only.
-- **Extraction method:** heuristic, regex-based pattern matching — not a full AST parser. This keeps the scanner dependency-free and fast, and every fact still carries file/line/matched-text evidence, but it will miss unusual code shapes (e.g. components returned via `React.createElement` with no JSX, dynamically constructed route strings, deeply re-exported components). A real AST-based extractor is the natural next upgrade — the fact schema is designed so extraction method can be swapped without touching anything downstream.
-- **No cross-file route-prefix resolution:** an Express route mounted via `app.use('/api', router)` in one file and defined in another isn't stitched into a single path yet.
-- **Read-only:** Rune never writes to your source files. It only ever writes its own graph to `.rune/graph.json`.
-- **Single-process, stdio MCP transport** — no multi-client daemon yet.
-
-## Security notes
-
-- Rune **never scans dotfiles or dot-directories** (`.env`, `.env.*.js`, `.git`, `.ssh`, editor configs, etc.), with no exceptions. This is enforced in the scanner and covered by a regression test — a config file with a matching code extension (e.g. `.env.js`) will not have its contents read or embedded as evidence.
-- Symlinks are not traversed, so a symlink pointing outside the project root can't pull external files into the scan.
-- `.rune/graph.json` is excluded from git by `rune init` (it creates `.gitignore` if one doesn't already exist).
-- The graph itself is the only thing Rune writes. If you share `.rune/graph.json` with an AI client, you're sharing everything in it — treat it like any other file that quotes snippets of your source.
-
-## Verifying the MCP server
-
-The unit test suite (`npm test`) covers scanning and the understanding graph, but doesn't spin up a real MCP client. `scripts/verify-mcp-server.mjs` does: it spawns `rune serve` as a real child process and drives it through the actual JSON-RPC handshake (`initialize` → `notifications/initialized` → `tools/list` → `tools/call`), checks that all expected tools are exposed, and confirms a genuinely invalid call is rejected cleanly rather than crashing the server.
-
-```bash
-npm install
-npm run verify:mcp
-# or against a real project instead of the bundled fixture:
-npm run verify:mcp -- /path/to/your-project
-```
-
-## Roadmap
-
-- AST-based extraction (swap-in replacement for the regex scanner)
-- Cross-file route resolution
-- Data-flow tracing between frontend calls and backend routes
-- True incremental re-scan — `rune watch` exists now, but it still does a full rebuild on every change, not a diff of just what changed. Fine for small-to-medium projects; will matter on very large ones.
-- Suggestion tools (e.g. flagging a known-vulnerable dependency pattern with evidence, proposing a reviewable fix) — strictly additive to the read-only model, never auto-applied
-
-## License
-
-MIT
+Once connected, your AI client can query Rune's understanding of the project.
 
 ---
 
-If you want to support the circus: ETH `0xbc0979dde621c353737d21f6d7b4eb361f7bc11f`
+What Rune understands
+
+Rune currently focuses on common JavaScript/TypeScript application structures.
+
+Frameworks
+
+- React
+- Next.js
+- Express
+
+Code intelligence
+
+- React components
+- Next.js pages
+- Next.js App Router routes
+- Express routes
+- File relationships
+- Import relationships
+- Codebase facts
+- Derived conclusions
+- Source evidence
+
+Support is intentionally focused while the project is still evolving.
+
+---
+
+Evidence-backed answers
+
+Most AI systems give you an answer.
+
+Rune aims to give you:
+
+the answer + the evidence behind it.
+
+For example:
+
+Conclusion
+──────────
+User authentication is handled by the auth middleware.
+
+Evidence
+────────
+middleware/auth.js:7
+middleware/auth.js:18
+
+Matched source
+──────────────
+export function authenticate(req, res, next) {
+
+This makes it easier to inspect what Rune believes and why.
+
+«Don't just give the AI an answer. Give it the evidence behind the answer.»
+
+---
+
+MCP tools
+
+Rune currently exposes tools for querying the project understanding.
+
+Tool| Purpose
+"rune_get_overview"| Get an architecture overview
+"rune_list_components"| List detected React components
+"rune_list_routes"| List Express and Next.js routes
+"rune_search"| Search project facts and derived nodes
+"rune_explain"| Inspect the evidence behind a conclusion
+"rune_get_file_dependencies"| Inspect file imports/dependencies
+"rune_rescan"| Rebuild the understanding after changes
+
+---
+
+CLI
+
+Command| Description
+"rune init [dir]"| Initialize Rune in a project
+"rune scan [dir]"| Perform a one-time scan
+"rune watch [dir]"| Watch for changes and rebuild
+"rune serve [dir]"| Start the MCP server
+"rune explain <id>"| Show evidence for a node
+"rune --version"| Show the installed version
+
+---
+
+Read-only by design
+
+Rune does not modify your source code.
+
+It maintains its own project data under:
+
+.rune/
+
+Your source remains yours.
+
+Rune's job is to read, understand, and explain.
+
+If you expose Rune's generated graph or source evidence to an AI client, remember that it can contain information from your codebase.
+
+---
+
+Who is Rune for?
+
+Rune is built for developers who:
+
+- Use AI coding agents regularly
+- Work on large or unfamiliar codebases
+- Switch between multiple AI coding tools
+- Build MCP-based developer workflows
+- Want persistent project context
+- Want AI answers that can be traced back to source
+
+Rune is especially useful when:
+
+Your project gets bigger
+        ↓
+Your context gets harder to maintain
+        ↓
+You use more AI agents
+        ↓
+Each agent needs to understand the same code
+        ↓
+Rune becomes the shared understanding layer
+
+---
+
+What Rune is not
+
+Rune is not:
+
+- An autonomous coding agent
+- An IDE replacement
+- A general-purpose static analyzer
+- A compiler
+- A full security scanner
+- A system that silently modifies your source
+
+Rune focuses on one problem:
+
+«Helping AI agents understand an existing codebase with persistent, inspectable context.»
+
+---
+
+Current status
+
+Rune is early-stage software.
+
+Today, the scanner uses lightweight heuristic and regex-based extraction rather than a complete AST parser.
+
+That keeps the system lightweight and fast, while preserving file, line, and evidence information.
+
+It also means some unusual code patterns may not be detected yet.
+
+For example:
+
+- Components created without recognizable JSX patterns
+- Dynamically constructed routes
+- Complex re-export chains
+- Framework-specific patterns outside current support
+
+If Rune gets something wrong, please open an issue.
+
+Real-world codebases are exactly how the extractor gets better.
+
+---
+
+Roadmap
+
+Intelligence
+
+- [ ] AST-based extraction
+- [ ] Deeper cross-file reasoning
+- [ ] Cross-file route resolution
+- [ ] Frontend → backend data-flow tracing
+- [ ] Broader framework support
+- [ ] Broader language support
+
+Runtime
+
+- [ ] True incremental rescanning
+- [ ] Faster graph updates
+- [ ] More MCP query capabilities
+- [ ] More client integrations
+
+Trust
+
+- [ ] Richer evidence trails
+- [ ] Evidence-backed suggestions
+- [ ] Reviewable dependency insights
+- [ ] Security-aware codebase analysis
+
+The principle stays the same:
+
+«Read first. Understand. Explain. Never silently modify your code.»
+
+---
+
+Current limitations
+
+Rune is intentionally early and focused.
+
+Known limitations include:
+
+- Limited framework coverage
+- Some extraction relies on heuristics
+- Cross-file Express route prefixes are not fully resolved
+- "rune watch" currently performs a full rebuild after changes rather than a true incremental diff
+- MCP currently uses a single-process stdio transport
+
+These limitations are part of the current development roadmap.
+
+---
+
+Development
+
+Clone the repository:
+
+git clone https://github.com/thecolourfoundation/rune.git
+cd rune
+
+Install dependencies:
+
+npm install
+
+Run tests:
+
+npm test
+
+Verify MCP:
+
+npm run verify:mcp
+
+Or test against a real project:
+
+npm run verify:mcp -- /path/to/your-project
+
+---
+
+Contributing
+
+Rune is early.
+
+If you're building with AI coding agents, MCP, developer tooling, or code intelligence, real-world feedback is valuable.
+
+Useful contributions include:
+
+- Reporting extraction bugs
+- Adding tests and fixtures
+- Improving framework detection
+- Improving MCP tools
+- Adding new evidence-backed queries
+- Testing Rune against real-world repositories
+- Improving documentation
+
+If you find something Rune doesn't understand:
+
+Show us the code.
+
+That's how we make the understanding layer better.
+
+---
+
+Philosophy
+
+AI doesn't need another tool that pretends to know everything.
+
+It needs better access to the software it's working on.
+
+Rune is built around a simple idea:
+
+Understand the codebase.
+Keep that understanding current.
+Make the reasoning inspectable.
+Give the evidence to the agent.
+
+Rune is the context layer between your codebase and your AI agents.
+
+---
+
+License
+
+MIT3
