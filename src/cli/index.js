@@ -120,23 +120,49 @@ async function cmdInit(rest) {
 }
 
 async function cmdScan(rest) {
-  const dir = resolveDir(rest);
+  const { flags, positional } = parseFlags(rest);
+  const dir = resolveDir(positional);
   assertDirExists(dir);
 
-  const start = Date.now();
-  const graph = buildGraph(dir);
+  let maxScanMs;
+  if (flags.timeout !== undefined) {
+    const timeoutSeconds = Number(flags.timeout);
+    if (!Number.isFinite(timeoutSeconds) || timeoutSeconds <= 0) {
+      console.log(`[rune] invalid --timeout value "${flags.timeout}" -- expected a positive number of seconds.`);
+      process.exitCode = 1;
+      return;
+    }
+    maxScanMs = timeoutSeconds * 1000;
+  }
+
+  const graph = buildGraph(dir, {
+    maxScanMs,
+    onProgress: ({ scanned, total }) => {
+      const pct = total > 0 ? Math.round((scanned / total) * 1000) / 10 : 0;
+      console.log(`[rune] progress: ${scanned}/${total} files (${pct}%)`);
+    },
+  });
   const filePath = writeGraph(dir, graph);
-  const ms = Date.now() - start;
+  const { coverage } = graph.meta;
 
   if (graph.meta.status === "no_supported_files") {
-    console.log(`[rune] scanned 0 supported source files in ${ms}ms`);
-    console.log(`[rune] security analysis skipped: no supported source files found (unsupported language, or nothing scannable in this project)`);
+    console.log(`[rune] scanned 0 supported source files in ${coverage.scanDurationMs}ms`);
+    console.log(`[rune] ${coverage.filesDiscovered} file(s) discovered, none matched a supported language (js/jsx/ts/tsx/mjs/cjs)`);
+    console.log(`[rune] security analysis skipped: no supported source files found`);
     console.log(`[rune] status: NO_SUPPORTED_FILES`);
     console.log(`[rune] graph written to ${filePath}`);
     return;
   }
 
-  console.log(`[rune] scanned ${graph.meta.fileCount} file(s) in ${ms}ms`);
+  if (graph.meta.status === "timeout") {
+    console.log(`[rune] status: TIMEOUT after ${coverage.scanDurationMs}ms`);
+    console.log(`[rune] scanned ${coverage.filesScanned} of ${coverage.filesSupported} supported file(s) (${coverage.coveragePercent}%) before the time budget ran out`);
+    console.log(`[rune] partial results below are real but incomplete -- re-run with a longer --timeout for a full scan`);
+  } else {
+    console.log(`[rune] scanned ${coverage.filesScanned} file(s) in ${coverage.scanDurationMs}ms`);
+  }
+
+  console.log(`[rune] coverage: ${coverage.filesSupported}/${coverage.filesDiscovered} files supported, ${coverage.filesSkippedUnsupportedExtension} skipped (unsupported language)`);
   console.log(`[rune] facts: ${graph.facts.length}, derived conclusions: ${graph.derived.length}`);
 
   if (graph.scanWarnings && graph.scanWarnings.length > 0) {

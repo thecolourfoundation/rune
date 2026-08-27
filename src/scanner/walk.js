@@ -16,14 +16,30 @@ const DEFAULT_IGNORES = new Set([
 const CODE_EXTENSIONS = new Set([".js", ".jsx", ".ts", ".tsx", ".mjs", ".cjs"]);
 
 /**
- * Recursively walks a directory, returning absolute paths of source files.
+ * Recursively walks a directory, returning absolute paths of source files
+ * AND coverage stats about what was seen along the way.
+ *
+ * Previously this only returned the matched file list, with no visibility
+ * into how many files existed that weren't JS/TS -- which made a
+ * "0 files scanned" result on a Go/Python/C repo indistinguishable from a
+ * genuine scanning bug. `stats.filesDiscovered` counts every regular file
+ * entry encountered (excluding ignored dirs/dotfiles, which are a
+ * deliberate, separate exclusion), so callers can report real coverage
+ * ("12,804 of 18,421 files were JS/TS; the rest are unsupported
+ * languages") instead of a bare, unexplained count.
+ *
  * @param {string} rootDir
  * @param {{ ignore?: string[] }} opts
- * @returns {string[]}
+ * @returns {{ files: string[], stats: { filesDiscovered: number, filesSupported: number, filesSkippedUnsupportedExtension: number } }}
  */
 export function walkSourceFiles(rootDir, opts = {}) {
   const ignore = new Set([...DEFAULT_IGNORES, ...(opts.ignore || [])]);
   const results = [];
+  const stats = {
+    filesDiscovered: 0,
+    filesSupported: 0,
+    filesSkippedUnsupportedExtension: 0,
+  };
 
   function walk(dir) {
     let entries;
@@ -35,33 +51,28 @@ export function walkSourceFiles(rootDir, opts = {}) {
     for (const entry of entries) {
       const name = entry.name;
 
-      // Never traverse into or read dotfiles/dot-directories (.env, .git, .ssh,
-      // editor config, etc). There is no exception for this: a file like
-      // `.env.js` would otherwise pass the CODE_EXTENSIONS check below and have
-      // its contents (including secrets) embedded as evidence snippets in the
-      // understanding graph.
       if (name.startsWith(".")) continue;
       if (ignore.has(name)) continue;
 
-      // Dirent reflects the entry itself (lstat semantics), so symlinks are
-      // already reported as neither isDirectory() nor isFile() and are
-      // skipped below. We check explicitly anyway so that stays true even if
-      // the underlying behavior ever changes.
       if (entry.isSymbolicLink && entry.isSymbolicLink()) continue;
 
       const full = path.join(dir, name);
       if (entry.isDirectory()) {
         walk(full);
       } else if (entry.isFile()) {
+        stats.filesDiscovered += 1;
         if (CODE_EXTENSIONS.has(path.extname(name))) {
           results.push(full);
+          stats.filesSupported += 1;
+        } else {
+          stats.filesSkippedUnsupportedExtension += 1;
         }
       }
     }
   }
 
   walk(rootDir);
-  return results;
+  return { files: results, stats };
 }
 
 export function readFileSafe(filePath) {

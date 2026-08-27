@@ -16,6 +16,8 @@ export const RUNE_DIR = ".rune";
 export const GRAPH_FILENAME = "graph.json";
 export const CONFIG_FILENAME = "config.json";
 
+const DEFAULT_MAX_SCAN_MS = null;
+
 function readConfig(rootDir) {
   const configPath = path.join(rootDir, RUNE_DIR, CONFIG_FILENAME);
   if (!fs.existsSync(configPath)) return { ignore: [] };
@@ -28,17 +30,6 @@ function readConfig(rootDir) {
   }
 }
 
-/**
- * Deduplicates security findings that describe the same underlying
- * evidence -- same category, rule, file, and line. This surfaced as a real
- * bug in benchmark data: the same finding appeared twice for the same
- * file/line (e.g. two identical "redaction pattern" findings at the exact
- * same location), inflating finding counts and undermining the benchmark's
- * credibility. Dedup keeps the first occurrence (earliest id) and drops
- * exact repeats; it does NOT merge near-duplicates with different rules or
- * lines, since those may be genuinely distinct findings that happen to be
- * close together.
- */
 function deduplicateFindings(findings) {
   const seen = new Map();
   for (const finding of findings) {
@@ -50,30 +41,44 @@ function deduplicateFindings(findings) {
   return Array.from(seen.values());
 }
 
-export function buildGraph(rootDir) {
+export function buildGraph(rootDir, options = {}) {
   if (!fs.existsSync(rootDir) || !fs.statSync(rootDir).isDirectory()) {
     throw new Error(`"${rootDir}" is not a directory. Check the path and try again.`);
   }
 
+  const maxScanMs = options.maxScanMs ?? DEFAULT_MAX_SCAN_MS;
+  const onProgress = options.onProgress;
+
   const config = readConfig(rootDir);
   const projectInfo = detectProjectKind(rootDir);
-  const files = walkSourceFiles(rootDir, { ignore: config.ignore });
+  const { files, stats: walkStats } = walkSourceFiles(rootDir, { ignore: config.ignore });
   const nextId = createIdGenerator();
 
   const facts = [];
   const rawSecurityFindings = [];
   const scanWarnings = [];
-  for (const filePath of files) {
-    const content = readFileSafe(filePath);
-    if (content == null) continue;
+  const scanStart = Date.now();
+  let timedOut = false;
+  let filesActuallyScanned = 0;
 
-    // Every extractor call for this file is wrapped in one try/catch --
-    // this is the top-level safety net. A benchmark run against large
-    // real-world repos (VS Code, Next.js) showed a single file's parser/
-    // traversal failure could throw uncaught and kill the ENTIRE
-    // repository scan, discarding everything already collected. One bad
-    // file must cost that file's own facts/findings, never the whole scan.
+  for (const filePath of files) {
+    if (maxScanMs !== null && Date.now() - scanStart > maxScanMs) {
+      timedOut = true;
+      break;
+    }
+
     const relPath = path.relative(rootDir, filePath);
+    const content = readFileSafe(filePath);
+    if (content == null) {
+      // A file readdirSync reported as present but that couldn't actually
+      // be read (permissions, race with a delete, etc.) is a real scan
+      // gap, not a silent no-op -- record it the same way a parse failure
+      // is recorded, so coverage numbers stay honest about what actually
+      // got analyzed.
+      scanWarnings.push({ file: relPath, error: "file could not be read" });
+      continue;
+    }
+
     try {
       facts.push(...extractFileFacts(filePath, content, rootDir, nextId));
       facts.push(...extractExpressRoutes(filePath, content, rootDir, nextId));
@@ -84,27 +89,61 @@ export function buildGraph(rootDir) {
     } catch (err) {
       scanWarnings.push({ file: relPath, error: err.message });
     }
+
+    filesActuallyScanned += 1;
+    if (onProgress && filesActuallyScanned % 200 === 0) {
+      onProgress({ scanned: filesActuallyScanned, total: files.length });
+    }
   }
-  facts.push(...extractNextRoutes(rootDir, nextId));
+
+  if (!timedOut) {
+    facts.push(...extractNextRoutes(rootDir, nextId));
+  }
 
   const securityFindings = deduplicateFindings(rawSecurityFindings);
 
-  const derived = facts.length > 0 ? deriveUnderstanding(facts, projectInfo) : [];
+  let status;
+  if (timedOut) {
+    status = "timeout";
+  } else if (walkStats.filesSupported === 0) {
+    status = "no_supported_files";
+  } else {
+    status = "success";
+  }
+
+  // Only suppress derived understanding when there was genuinely nothing
+  // supported to look at (status === "no_supported_files") -- NOT simply
+  // whenever fact extraction happened to yield zero facts. A real JS/TS
+  // project can legitimately have zero extractable facts (e.g. a file
+  // with no imports, components, or routes) while still having real,
+  // supported source code; that's a valid "success" scan and still
+  // deserves whatever derived summary deriveUnderstanding produces for an
+  // empty fact set, rather than being silently treated the same as a
+  // repo Rune couldn't analyze at all.
+  const derived = status === "no_supported_files" ? [] : deriveUnderstanding(facts, projectInfo);
+
+  const scanDurationMs = Date.now() - scanStart;
+  const coveragePercent = walkStats.filesSupported > 0
+    ? Math.round((filesActuallyScanned / walkStats.filesSupported) * 1000) / 10
+    : null;
 
   const graph = {
     meta: {
       rune: getVersion(),
       generatedAt: new Date().toISOString(),
       rootDir,
-      fileCount: files.length,
-      // "success" is misleading when zero files were actually scannable --
-      // a benchmark run against kubernetes/kubernetes and torvalds/linux
-      // showed Rune printing "no security findings" for repos it had not
-      // meaningfully analyzed at all (0 files discovered as scannable
-      // JS/TS). This status makes that distinction explicit instead of
-      // letting a clean-looking zero imply a real, completed analysis.
-      status: files.length === 0 ? "no_supported_files" : "success",
+      fileCount: filesActuallyScanned,
+      status,
       filesFailedToParse: scanWarnings.length,
+      coverage: {
+        filesDiscovered: walkStats.filesDiscovered,
+        filesSupported: walkStats.filesSupported,
+        filesScanned: filesActuallyScanned,
+        filesSkippedUnsupportedExtension: walkStats.filesSkippedUnsupportedExtension,
+        filesFailedToParse: scanWarnings.length,
+        coveragePercent,
+        scanDurationMs,
+      },
       stack: {
         react: projectInfo.hasReact,
         next: projectInfo.hasNext,
