@@ -1,7 +1,7 @@
 {
-  "name": "@pypl100/rune",
+  "name": "@moosl/rune",
   "version": "0.3.0",
-  "description": "The Software Intelligence Runtime — persistent, explainable software understanding for any AI.",
+  "description": "The Software Intelligence Runtime \u2014 persistent, explainable software understanding for any AI.",
   "type": "module",
   "bin": {
     "rune": "./bin/rune.js"
@@ -42,5 +42,6 @@
     "src",
     "README.md",
     "LICENSE"
-  ]
+  ],
+  "mcpName": "io.github.thecolourfoundation/rune"
 }

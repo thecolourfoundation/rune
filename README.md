@@ -63,7 +63,7 @@ Rune is designed to make code intelligence inspectable rather than blindly trust
 
 **Node.js**
 ```bash
-npm install -g @pypl100/rune
+npm install -g @moosl/rune
 ```
 
 **Python**
@@ -192,7 +192,7 @@ Instead of requiring every agent to reconstruct the repository independently, Ru
   "mcpServers": {
     "rune": {
       "command": "npx",
-      "args": ["-p", "@pypl100/rune", "rune", "serve", "/absolute/path/to/your-project"]
+      "args": ["-p", "@moosl/rune", "rune", "serve", "/absolute/path/to/your-project"]
     }
   }
 }

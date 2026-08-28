@@ -23,7 +23,8 @@
           "description": "Absolute path to the project directory Rune should scan and serve understanding for.",
           "is_required": true
         }
-      ]
+      ],
+      "identifier": "@moosl/rune"
     }
   ],
   "transport": {
