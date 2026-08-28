@@ -1,7 +1,7 @@
 {
-  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-09-29/server.schema.json",
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "io.github.thecolourfoundation/rune",
-  "description": "Persistent, evidence-traced codebase understanding for AI coding agents over MCP -- includes architecture mapping, security findings (secrets, dangerous shell exec, CI/CD risk, dependency typosquats), and project memory. Every answer cites the exact file/line evidence it's based on.",
+  "description": "Evidence-traced codebase understanding and security scanning for AI agents over MCP.",
   "version": "0.3.0",
   "repository": {
     "url": "https://github.com/thecolourfoundation/rune",
@@ -9,25 +9,24 @@
   },
   "packages": [
     {
-      "registry_name": "npm",
-      "name": "@pypl100/rune",
+      "registryType": "npm",
+      "identifier": "@moosl/rune",
       "version": "0.3.0",
-      "package_arguments": [
+      "transport": {
+        "type": "stdio"
+      },
+      "runtimeArguments": [
         {
           "type": "positional",
           "value": "serve"
         },
         {
           "type": "positional",
-          "value": "{project_dir}",
-          "description": "Absolute path to the project directory Rune should scan and serve understanding for.",
-          "is_required": true
+          "valueHint": "project_dir",
+          "description": "Absolute path to the project directory to scan and serve.",
+          "isRequired": true
         }
-      ],
-      "identifier": "@moosl/rune"
+      ]
     }
-  ],
-  "transport": {
-    "type": "stdio"
-  }
+  ]
 }
