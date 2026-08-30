@@ -380,5 +380,3 @@ Rune is the context layer between your codebase and your AI agents.
 MIT
 
 ---
-
-If you want to support the circus: ETH `0xbc0979dde621c353737d21f6d7b4eb361f7bc11f`
