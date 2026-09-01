@@ -254,6 +254,7 @@ export function authenticate(req, res, next) {
 | `rune_get_file_dependencies` | Internal import graph for a file |
 | `rune_get_memory` | Project conventions and rules (with approval status) |
 | `rune_get_experience` | History of past task attempts and outcomes |
+| `rune_get_security_findings` | All security findings, filterable by severity/category -- the single call for "any security risks here?" |
 | `rune_rescan` | Re-scan on demand after code changes |
 
 ---
@@ -380,3 +381,5 @@ Rune is the context layer between your codebase and your AI agents.
 MIT
 
 ---
+
+If you want to support the circus: ETH `0xbc0979dde621c353737d21f6d7b4eb361f7bc11f`
