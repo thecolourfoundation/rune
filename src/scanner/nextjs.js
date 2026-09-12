@@ -38,7 +38,7 @@ export function extractNextRoutes(rootDir, nextId) {
     : null;
 
   if (pagesDir) {
-    walkPages(pagesDir, rootDir, facts, nextId);
+    walkPages(pagesDir, pagesDir, rootDir, facts, nextId);
   }
 
   const appDir = fs.existsSync(path.join(rootDir, "app"))
@@ -54,13 +54,23 @@ export function extractNextRoutes(rootDir, nextId) {
   return facts;
 }
 
-function walkPages(pagesDir, rootDir, facts, nextId) {
-  const entries = fs.readdirSync(pagesDir, { withFileTypes: true });
+// dir: the directory currently being scanned (changes across recursion).
+// pagesRootDir: the original pages/ (or src/pages/) root, fixed across the
+// whole walk. Bug fix: previously this function re-derived pagesRootDir
+// from its own "pagesDir" parameter each call, so relative paths (and
+// therefore routePath / the api/ prefix check) were computed against the
+// immediate parent directory instead of the true pages root, silently
+// truncating routes more than one level deep (e.g. pages/api/users.js
+// came out as /users instead of /api/users). walkAppRouter never had this
+// bug since it threads a segments[] accumulator instead of relying on a
+// shifting path.relative root.
+function walkPages(dir, pagesRootDir, rootDir, facts, nextId) {
+  const entries = fs.readdirSync(dir, { withFileTypes: true });
   for (const entry of entries) {
     if (entry.name.startsWith(".")) continue;
-    const full = path.join(pagesDir, entry.name);
+    const full = path.join(dir, entry.name);
     if (entry.isDirectory()) {
-      walkPages(full, rootDir, facts, nextId);
+      walkPages(full, pagesRootDir, rootDir, facts, nextId);
       continue;
     }
     const ext = path.extname(entry.name);
@@ -68,7 +78,7 @@ function walkPages(pagesDir, rootDir, facts, nextId) {
     const base = path.basename(entry.name, ext);
     if (IGNORED_PAGE_FILES.has(base)) continue;
 
-    const relToPagesWithExt = path.relative(pagesDir, full);
+    const relToPagesWithExt = path.relative(pagesRootDir, full);
     const relToPages = relToPagesWithExt.slice(0, -ext.length);
     const isApi = relToPages === "api" || relToPages.startsWith(`api${path.sep}`);
     const segments = relToPages.split(path.sep).filter((p) => p !== "index");

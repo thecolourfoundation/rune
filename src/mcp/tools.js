@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { listProjectMemory, listExperience } from "../memory/memory.js";
+import { verifyFact, verifyFacts } from "../graph/verify.js";
 
 // NOTE: @modelcontextprotocol/sdk's McpServer.registerTool() requires Zod
 // schemas (a raw shape object of Zod types), not JSON Schema. An earlier
@@ -172,6 +173,34 @@ export function buildTools(getGraph, rootDir) {
           summaryAllFindings: bySeverity,
           note: "Each finding's 'confidence' field indicates how sure Rune is this is a real issue (not a false positive from test/fixture/pattern-definition context) -- low-confidence findings are still real matches, just less certain to be exploitable production code.",
         };
+      },
+    },
+    {
+      name: "rune_verify_fact",
+      title: "Verify a fact against live code",
+      description:
+        "Re-check a single fact (by id, as returned by other rune_ tools) against the current state of its source file, instead of trusting what was recorded at the last `rune scan`. Returns 'confirmed' if the code still matches, 'stale' with both the old and new evidence lines if it changed, or 'file_missing'/'line_gone' if the location no longer exists. Cheap: reads only that one file/line, not a full re-scan. Use this before relying on a specific fact from a graph that might be out of date.",
+      inputSchema: {
+        id: z.string().min(1, "id must not be empty").describe("The fact id to verify (not a derived-conclusion id -- see rune_check_drift for verifying everything at once)"),
+      },
+      handler: async ({ id }) => {
+        const graph = getGraph();
+        const fact = graph.facts.find((f) => f.id === id);
+        if (!fact) {
+          return { error: `No fact found with id "${id}". Note: only raw facts can be verified this way, not derived conclusions.` };
+        }
+        return { fact, result: verifyFact(fact, rootDir) };
+      },
+    },
+    {
+      name: "rune_check_drift",
+      title: "Check graph-wide drift",
+      description:
+        "Re-check every fact in the graph against the live state of the code and summarize how much has drifted since the last `rune scan`. Cheap: re-reads only the specific line each fact points to, not a full re-parse of the project. Use this to decide whether the current graph is still trustworthy before relying on it heavily, or to know it is time to re-run `rune scan`. Returns counts by status plus the full list of drifted facts (stale/file_missing/line_gone) with before/after evidence where applicable.",
+      inputSchema: emptySchema,
+      handler: async () => {
+        const graph = getGraph();
+        return verifyFacts(graph.facts, rootDir);
       },
     },
   ];

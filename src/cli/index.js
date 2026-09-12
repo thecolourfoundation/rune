@@ -1,6 +1,7 @@
 import path from "node:path";
 import fs from "node:fs";
 import { buildGraph, writeGraph, readGraph, RUNE_DIR, GRAPH_FILENAME } from "../graph/build.js";
+import { verifyFacts } from "../graph/verify.js";
 import { getVersion } from "../version.js";
 import {
   addProjectMemory,
@@ -20,6 +21,7 @@ Usage:
   rune watch [dir]    Keep the understanding graph current as files change
   rune serve [dir]    Start the MCP server so AI clients can query it
   rune explain <id>   Show the evidence trail behind a fact or conclusion
+  rune verify [dir]    Check stored facts against the current code (drift report)
   rune memory <cmd>   Manage project memory (add/list/approve/reject)
   rune experience <cmd>  Log and review past task outcomes (add/list)
   rune --version      Print the installed Rune version
@@ -61,6 +63,8 @@ export async function runCli(args) {
       return cmdServe(rest);
     case "explain":
       return cmdExplain(rest);
+    case "verify":
+      return cmdVerify(rest);
     case "memory":
       return cmdMemory(rest);
     case "experience":
@@ -364,6 +368,51 @@ async function cmdExplain(rest) {
 
   console.log(`[rune] no fact or derived node found with id "${id}"`);
   process.exitCode = 1;
+}
+
+/**
+ * Checks every fact in the current graph against the live state of its
+ * source file (see graph/verify.js) and prints a drift report. Does NOT
+ * re-scan or re-parse the project - it's a cheap live check on top of
+ * whatever `rune scan` already found, meant to answer "is this graph
+ * still trustworthy right now" without paying for a full rebuild.
+ */
+async function cmdVerify(rest) {
+  const dir = resolveDir(rest);
+  assertDirExists(dir);
+
+  const graph = readGraph(dir);
+  if (!graph) {
+    console.log(`[rune] no graph found here yet. Run \`rune scan\` first to build one, then try again.`);
+    process.exitCode = 1;
+    return;
+  }
+
+  const report = verifyFacts(graph.facts, dir);
+  const { summary, drifted, total } = report;
+
+  console.log(`[rune] verified ${total} fact(s) against the current code`);
+  console.log(`[rune]   confirmed: ${summary.confirmed}  stale: ${summary.stale}  file_missing: ${summary.file_missing}  line_gone: ${summary.line_gone}  unverifiable: ${summary.unverifiable}`);
+
+  if (drifted.length === 0) {
+    console.log(`[rune]   no drift detected - every fact still matches the code on disk.`);
+    return;
+  }
+
+  console.log(`[rune] showing ${Math.min(drifted.length, 10)} of ${drifted.length} drifted fact(s):`);
+  for (const d of drifted.slice(0, 10)) {
+    if (d.status === "stale") {
+      console.log(`[rune]   [stale] ${d.id} ${d.file}:${d.line}`);
+      console.log(`[rune]     was: ${d.previousEvidence}`);
+      console.log(`[rune]     now: ${d.currentEvidence}`);
+    } else {
+      console.log(`[rune]   [${d.status}] ${d.id} ${d.file ?? ""}${d.line ? ":" + d.line : ""}`);
+    }
+  }
+  if (drifted.length > 10) {
+    console.log(`[rune]   ...and ${drifted.length - 10} more. Run \`rune scan\` to rebuild the graph fresh.`);
+  }
+  console.log(`[rune] run \`rune scan\` to rebuild the graph and clear stale facts.`);
 }
 
 /**
