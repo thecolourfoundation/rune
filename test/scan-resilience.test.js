@@ -22,7 +22,7 @@ test("REGRESSION: one file that throws during traversal does not kill the whole 
 
 test("REGRESSION: a repository with zero scannable files reports status 'no_supported_files', not silent success", () => {
   const dir = tmpProject();
-  fs.writeFileSync(path.join(dir, "README.md"), "# Just a readme\n");
+  fs.writeFileSync(path.join(dir, "main.go"), "package main\n");
 
   const graph = buildGraph(dir);
 
@@ -41,7 +41,7 @@ test("a repository with real scannable files reports status 'success'", () => {
 
 test("zero scannable files does not manufacture an architecture_summary from no evidence", () => {
   const dir = tmpProject();
-  fs.writeFileSync(path.join(dir, "README.md"), "# Just a readme\n");
+  fs.writeFileSync(path.join(dir, "main.go"), "package main\n");
 
   const graph = buildGraph(dir);
 

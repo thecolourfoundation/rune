@@ -14,6 +14,8 @@ export function deriveUnderstanding(facts, projectInfo) {
   const nextPageRoutes = facts.filter((f) => f.type === "next_page_route");
   const nextApiRoutes = facts.filter((f) => f.type === "next_api_route");
   const imports = facts.filter((f) => f.type === "import");
+  const shellSources = facts.filter((f) => f.type === "shell_source");
+  const docLinks = facts.filter((f) => f.type === "doc_link");
 
   // --- Architecture summary ---
   // A framework counts as "detected" if EITHER package.json declares it OR
@@ -96,6 +98,25 @@ export function deriveUnderstanding(facts, projectInfo) {
       basedOn: components.map((c) => c.id),
       confidence: "medium",
     });
+  }
+
+  const shellSourcesByFile = new Map();
+  for (const src of shellSources) {
+    if (!shellSourcesByFile.has(src.file)) shellSourcesByFile.set(src.file, []);
+    shellSourcesByFile.get(src.file).push(src);
+  }
+  for (const [file, srcs] of shellSourcesByFile.entries()) {
+    derived.push({ id: nextId("derived"), type: "shell_dependency", file, dependsOn: [...new Set(srcs.map((s) => s.target))], basedOn: srcs.map((s) => s.id), confidence: "high" });
+  }
+
+  const localDocLinks = docLinks.filter((l) => !/^https?:\/\//.test(l.target) && !l.target.startsWith("#"));
+  const docLinksByFile = new Map();
+  for (const link of localDocLinks) {
+    if (!docLinksByFile.has(link.file)) docLinksByFile.set(link.file, []);
+    docLinksByFile.get(link.file).push(link);
+  }
+  for (const [file, links] of docLinksByFile.entries()) {
+    derived.push({ id: nextId("derived"), type: "doc_reference", file, references: [...new Set(links.map((l) => l.target))], basedOn: links.map((l) => l.id), confidence: "high" });
   }
 
   return derived;

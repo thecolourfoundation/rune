@@ -25,8 +25,8 @@ test("filesSupported counts only JS/TS-family files, matching the returned files
 
   const { files, stats } = walkSourceFiles(dir);
 
-  assert.equal(files.length, 2);
-  assert.equal(stats.filesSupported, 2);
+  assert.equal(files.length, 2, "files array stays JS/TS-only");
+  assert.equal(stats.filesSupported, 3, "readme.md now counts as a supported (markdown) file");
 });
 
 test("REGRESSION: filesDiscovered counts non-JS files too, so a Go/Python-only repo's zero JS files is explainable, not silent", () => {
@@ -38,9 +38,9 @@ test("REGRESSION: filesDiscovered counts non-JS files too, so a Go/Python-only r
   const { files, stats } = walkSourceFiles(dir);
 
   assert.equal(files.length, 0);
-  assert.equal(stats.filesSupported, 0);
-  assert.equal(stats.filesDiscovered, 3, "the files existed and were seen, even though none are supported languages");
-  assert.equal(stats.filesSkippedUnsupportedExtension, 3);
+  assert.equal(stats.filesSupported, 1, "README.md is now a supported markdown file");
+  assert.equal(stats.filesDiscovered, 3, "the files existed and were seen, even though not all are supported");
+  assert.equal(stats.filesSkippedUnsupportedExtension, 2, "only main.go and utils.py are unsupported now");
 });
 
 test("ignored directories are not counted in filesDiscovered at all", () => {

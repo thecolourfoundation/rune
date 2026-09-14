@@ -20,6 +20,8 @@ const CONFIG_EXTENSIONS = new Set([".toml", ".yaml", ".yml", ".json", ".jsonc"])
 // detectProjectKind for dependency info -- treating them as generic
 // config files too would double-count them and produce redundant facts.
 const CONFIG_FILENAME_EXCLUDES = new Set(["package.json", "package-lock.json", "npm-shrinkwrap.json"]);
+const MARKDOWN_EXTENSIONS = new Set([".md", ".mdx"]);
+const LUA_EXTENSIONS = new Set([".lua"]);
 
 /**
  * Recursively walks a directory, returning absolute paths of source files
@@ -43,6 +45,8 @@ export function walkSourceFiles(rootDir, opts = {}) {
   const results = [];
   const shellFiles = [];
   const configFiles = [];
+  const markdownFiles = [];
+  const luaFiles = [];
   const stats = {
     filesDiscovered: 0,
     filesSupported: 0,
@@ -80,10 +84,13 @@ export function walkSourceFiles(rootDir, opts = {}) {
           configFiles.push(full);
           stats.filesSupported += 1;
         } else if (CONFIG_EXTENSIONS.has(ext) && CONFIG_FILENAME_EXCLUDES.has(name)) {
-          // Counted as discovered but not "supported" for config purposes --
-          // it's still scanned via detectProjectKind, just not double-counted
-          // here or emitted as generic config_key facts.
           stats.filesSkippedUnsupportedExtension += 1;
+        } else if (MARKDOWN_EXTENSIONS.has(ext)) {
+          markdownFiles.push(full);
+          stats.filesSupported += 1;
+        } else if (LUA_EXTENSIONS.has(ext)) {
+          luaFiles.push(full);
+          stats.filesSupported += 1;
         } else {
           stats.filesSkippedUnsupportedExtension += 1;
         }
@@ -92,7 +99,7 @@ export function walkSourceFiles(rootDir, opts = {}) {
   }
 
   walk(rootDir);
-  return { files: results, shellFiles, configFiles, stats };
+  return { files: results, shellFiles, configFiles, markdownFiles, luaFiles, stats };
 }
 
 export function readFileSafe(filePath) {

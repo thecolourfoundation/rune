@@ -7,6 +7,8 @@ import { extractNextRoutes } from "../scanner/nextjs.js";
 import { extractVueComponents } from "../scanner/vue.js";
 import { extractShellFacts } from "../scanner/shell.js";
 import { extractConfigFacts } from "../scanner/config.js";
+import { extractMarkdownFacts } from "../scanner/markdown.js";
+import { extractLuaFacts } from "../scanner/lua.js";
 import { extractSecretFindings } from "../scanner/secrets.js";
 import { extractShellExecFindings } from "../scanner/shellexec.js";
 import { extractWorkflowFindings } from "../scanner/workflow.js";
@@ -55,7 +57,7 @@ export function buildGraph(rootDir, options = {}) {
 
   const config = readConfig(rootDir);
   const projectInfo = detectProjectKind(rootDir);
-  const { files, shellFiles, configFiles, stats: walkStats } = walkSourceFiles(rootDir, { ignore: config.ignore });
+  const { files, shellFiles, configFiles, markdownFiles, luaFiles, stats: walkStats } = walkSourceFiles(rootDir, { ignore: config.ignore });
   const nextId = createIdGenerator();
 
   const facts = [];
@@ -141,6 +143,28 @@ export function buildGraph(rootDir, options = {}) {
       } catch (err) {
         scanWarnings.push({ file: relPath, error: err.message });
       }
+      filesActuallyScanned += 1;
+    }
+  }
+
+  if (!timedOut) {
+    for (const filePath of markdownFiles) {
+      if (maxScanMs !== null && Date.now() - scanStart > maxScanMs) { timedOut = true; break; }
+      const relPath = path.relative(rootDir, filePath);
+      const content = readFileSafe(filePath);
+      if (content == null) { scanWarnings.push({ file: relPath, error: "file could not be read" }); continue; }
+      try { facts.push(...extractMarkdownFacts(filePath, content, rootDir, nextId)); } catch (err) { scanWarnings.push({ file: relPath, error: err.message }); }
+      filesActuallyScanned += 1;
+    }
+  }
+
+  if (!timedOut) {
+    for (const filePath of luaFiles) {
+      if (maxScanMs !== null && Date.now() - scanStart > maxScanMs) { timedOut = true; break; }
+      const relPath = path.relative(rootDir, filePath);
+      const content = readFileSafe(filePath);
+      if (content == null) { scanWarnings.push({ file: relPath, error: "file could not be read" }); continue; }
+      try { facts.push(...extractLuaFacts(filePath, content, rootDir, nextId)); } catch (err) { scanWarnings.push({ file: relPath, error: err.message }); }
       filesActuallyScanned += 1;
     }
   }

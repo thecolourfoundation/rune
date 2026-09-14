@@ -18,8 +18,8 @@ test("meta.coverage reports filesDiscovered/filesSupported/filesScanned correctl
   const graph = buildGraph(dir);
 
   assert.equal(graph.meta.coverage.filesDiscovered, 3);
-  assert.equal(graph.meta.coverage.filesSupported, 1);
-  assert.equal(graph.meta.coverage.filesScanned, 1);
+  assert.equal(graph.meta.coverage.filesSupported, 2, "app.js and README.md are both supported now");
+  assert.equal(graph.meta.coverage.filesScanned, 2);
   assert.equal(graph.meta.status, "success");
 });
 
