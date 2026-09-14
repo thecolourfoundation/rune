@@ -1,6 +1,8 @@
 import { z } from "zod";
 import { listProjectMemory, listExperience } from "../memory/memory.js";
 import { verifyFact, verifyFacts } from "../graph/verify.js";
+import { runAgentLoop } from "../agent/loop.js";
+import { budgetReport } from "../agent/budget.js";
 
 // NOTE: @modelcontextprotocol/sdk's McpServer.registerTool() requires Zod
 // schemas (a raw shape object of Zod types), not JSON Schema. An earlier
@@ -201,6 +203,20 @@ export function buildTools(getGraph, rootDir) {
       handler: async () => {
         const graph = getGraph();
         return verifyFacts(graph.facts, rootDir);
+      },
+    },
+    {
+      name: "rune_agent",
+      title: "Investigate an objective with the Rune Agent",
+      description:
+        "Runs the Rune Agent's read-only investigation loop (retrieve relevant facts, form hypotheses per implicated file, gather evidence via live verification and impact analysis, rank by confidence) for a high-level objective like 'why is auth failing' or 'what does the scanner module depend on'. Returns ranked hypotheses with evidence and confidence, not a single guess. Does not modify any files -- read-only investigation only. Response is compressed to fit maxTokens (default 8000) using a chars/4 token estimate; the returned `budget` field reports what was kept vs dropped so you know if you should raise maxTokens or re-scan with a narrower objective.",
+      inputSchema: {
+        objective: z.string().min(1, "objective must not be empty").describe("A high-level question or goal, e.g. 'why is authentication failing' or 'what depends on the scanner module'"),
+        maxTokens: z.number().int().positive().optional().describe("Token budget for the response (default 8000). Lower this to get a terser answer; raise it if hypotheses/evidence are being dropped."),
+      },
+      handler: async ({ objective, maxTokens }) => {
+        const report = runAgentLoop(objective, rootDir);
+        return budgetReport(report, maxTokens ? { maxTokens } : undefined);
       },
     },
   ];
