@@ -11,6 +11,7 @@ import { extractWorkflowFindings } from "../scanner/workflow.js";
 import { extractDependencyFindings } from "../scanner/depcheck.js";
 import { deriveUnderstanding } from "./derive.js";
 import { createIdGenerator } from "../scanner/id.js";
+import { normalizeFacts } from "../scanner/fact-schema.js";
 import { getVersion } from "../version.js";
 
 export const RUNE_DIR = ".rune";
@@ -101,6 +102,7 @@ export function buildGraph(rootDir, options = {}) {
     facts.push(...extractNextRoutes(rootDir, nextId));
     facts.push(...extractVueComponents(rootDir, nextId));
   }
+  const normalizedFacts = normalizeFacts(facts);
 
   const securityFindings = deduplicateFindings(rawSecurityFindings);
 
@@ -122,7 +124,7 @@ export function buildGraph(rootDir, options = {}) {
   // deserves whatever derived summary deriveUnderstanding produces for an
   // empty fact set, rather than being silently treated the same as a
   // repo Rune couldn't analyze at all.
-  const derived = status === "no_supported_files" ? [] : deriveUnderstanding(facts, projectInfo);
+  const derived = status === "no_supported_files" ? [] : deriveUnderstanding(normalizedFacts, projectInfo);
 
   const scanDurationMs = Date.now() - scanStart;
   const coveragePercent = walkStats.filesSupported > 0
@@ -153,7 +155,7 @@ export function buildGraph(rootDir, options = {}) {
       },
       note: "Facts are extracted via AST-based parsing (Babel parser/traverse), not regex heuristics. Every fact carries file/line/evidence and a confidence level. Every derived node lists the fact ids it is based on.",
     },
-    facts,
+    facts: normalizedFacts,
     derived,
     securityFindings,
     scanWarnings,
