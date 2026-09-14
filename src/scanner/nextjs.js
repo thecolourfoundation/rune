@@ -1,5 +1,6 @@
 import path from "node:path";
 import fs from "node:fs";
+import { confidenceForFile } from "./confidence.js";
 
 const IGNORED_PAGE_FILES = new Set(["_app", "_document", "_error", "middleware"]);
 const PAGE_EXTENSIONS = [".js", ".jsx", ".ts", ".tsx"];
@@ -83,14 +84,16 @@ function walkPages(dir, pagesRootDir, rootDir, facts, nextId) {
     const isApi = relToPages === "api" || relToPages.startsWith(`api${path.sep}`);
     const segments = relToPages.split(path.sep).filter((p) => p !== "index");
     const routePath = segmentsToRoutePath(segments);
+    const relPath = path.relative(rootDir, full);
 
     facts.push({
       id: nextId("nextroute"),
       type: isApi ? "next_api_route" : "next_page_route",
       router: "pages",
       routePath,
-      file: path.relative(rootDir, full),
+      file: relPath,
       line: 1,
+      confidence: confidenceForFile(relPath),
       evidence: `file convention: pages/${relToPagesWithExt}`,
     });
   }
@@ -113,13 +116,15 @@ function walkAppRouter(dir, rootDir, facts, nextId, segments = []) {
     if (!APP_ROUTER_ROUTE_BASENAMES.has(base)) continue;
 
     const routePath = segmentsToRoutePath(segments);
+    const relPath = path.relative(rootDir, full);
     facts.push({
       id: nextId("nextroute"),
       type: base === "page" ? "next_page_route" : "next_api_route",
       router: "app",
       routePath,
-      file: path.relative(rootDir, full),
+      file: relPath,
       line: 1,
+      confidence: confidenceForFile(relPath),
       evidence: `file convention: app/${segments.join("/")}/${base}${ext}`,
     });
   }

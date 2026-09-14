@@ -4,6 +4,7 @@ import { walkSourceFiles, readFileSafe, detectProjectKind } from "../scanner/wal
 import { extractFileFacts } from "../scanner/facts.js";
 import { extractExpressRoutes } from "../scanner/express.js";
 import { extractNextRoutes } from "../scanner/nextjs.js";
+import { extractVueComponents } from "../scanner/vue.js";
 import { extractSecretFindings } from "../scanner/secrets.js";
 import { extractShellExecFindings } from "../scanner/shellexec.js";
 import { extractWorkflowFindings } from "../scanner/workflow.js";
@@ -98,6 +99,7 @@ export function buildGraph(rootDir, options = {}) {
 
   if (!timedOut) {
     facts.push(...extractNextRoutes(rootDir, nextId));
+    facts.push(...extractVueComponents(rootDir, nextId));
   }
 
   const securityFindings = deduplicateFindings(rawSecurityFindings);
@@ -149,7 +151,7 @@ export function buildGraph(rootDir, options = {}) {
         next: projectInfo.hasNext,
         express: projectInfo.hasExpress,
       },
-      note: "Facts are extracted via AST-based parsing (Babel parser/traverse), not regex heuristics. Every fact carries file/line/evidence. Every derived node lists the fact ids it is based on.",
+      note: "Facts are extracted via AST-based parsing (Babel parser/traverse), not regex heuristics. Every fact carries file/line/evidence and a confidence level. Every derived node lists the fact ids it is based on.",
     },
     facts,
     derived,

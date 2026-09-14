@@ -1,6 +1,7 @@
 import path from "node:path";
 import { parse } from "@babel/parser";
 import _traverse from "@babel/traverse";
+import { confidenceForFile } from "./confidence.js";
 const traverse = _traverse.default;
 
 /**
@@ -8,6 +9,10 @@ const traverse = _traverse.default;
  * Same fact schema as before (id, type, file, line, name, evidence), so
  * everything downstream (graph, MCP tools) is unaffected. Extraction method
  * changed; nothing else did.
+ *
+ * v3 additions: every fact now carries a `confidence` field (see
+ * confidence.js), and this file also records a shallow function-call graph
+ * (see enclosingFunctionName + the function_call fact type below).
  */
 
 const EVIDENCE_MAX_CHARS = 160;
@@ -28,8 +33,47 @@ function containsJSX(outerPath) {
   return found;
 }
 
+// Resolves the name of the function/method enclosing a call site, used to
+// build a (deliberately shallow) call graph. Handles the common binding
+// shapes: named function declarations, class/object methods, and
+// function/arrow expressions bound to a variable, property, or assignment.
+// Returns null for genuinely anonymous call sites (top-level script code,
+// inline callbacks with no binding) rather than guessing - a missing
+// caller is honest, a wrong one is worse than useless for a call graph.
+function enclosingFunctionName(callPath) {
+  const fnPath = callPath.getFunctionParent();
+  if (!fnPath) return null;
+  const node = fnPath.node;
+
+  if (node.type === "FunctionDeclaration" && node.id) return node.id.name;
+
+  if (node.type === "ClassMethod" || node.type === "ObjectMethod") {
+    if (node.key && !node.computed && node.key.type === "Identifier") {
+      const classPath = fnPath.findParent((p) => p.isClassDeclaration());
+      const className = classPath?.node?.id?.name;
+      return className ? `${className}.${node.key.name}` : node.key.name;
+    }
+    return null;
+  }
+
+  // FunctionExpression / ArrowFunctionExpression: name comes from how it's bound.
+  const parent = fnPath.parentPath;
+  if (!parent) return null;
+  if (parent.isVariableDeclarator() && parent.node.id.type === "Identifier") {
+    return parent.node.id.name;
+  }
+  if (parent.isObjectProperty() && !parent.node.computed && parent.node.key.type === "Identifier") {
+    return parent.node.key.name;
+  }
+  if (parent.isAssignmentExpression() && parent.node.left.type === "Identifier") {
+    return parent.node.left.name;
+  }
+  return null;
+}
+
 export function extractFileFacts(filePath, content, rootDir, nextId) {
   const relPath = path.relative(rootDir, filePath);
+  const confidence = confidenceForFile(relPath);
   const facts = [];
   const lines = content.split("\n");
 
@@ -67,11 +111,12 @@ export function extractFileFacts(filePath, content, rootDir, nextId) {
           file: relPath,
           line: ln,
           target: path.node.source.value,
+          confidence,
           evidence: evidenceFor(lines, ln),
         });
       },
 
-      // require("x")
+      // require("x"), hook usage, and a shallow call graph
       CallExpression(path) {
         const callee = path.node.callee;
         if (
@@ -86,8 +131,10 @@ export function extractFileFacts(filePath, content, rootDir, nextId) {
             file: relPath,
             line: ln,
             target: path.node.arguments[0].value,
+            confidence,
             evidence: evidenceFor(lines, ln),
           });
+          return;
         }
 
         // Hook usage: useXxx(...)
@@ -101,9 +148,34 @@ export function extractFileFacts(filePath, content, rootDir, nextId) {
               file: relPath,
               line: ln,
               name: callee.name,
+              confidence,
               evidence: evidenceFor(lines, ln),
             });
           }
+          return;
+        }
+
+        // Shallow call graph: direct calls to a named function by identifier
+        // only. Deliberately excludes member-expression calls (obj.method())
+        // and computed calls -- including those would flood every scan with
+        // a fact for every array/console/library method call in the
+        // codebase, which is noise, not a call graph. This is the simplest,
+        // lowest-noise slice: "does function A call function B by name in
+        // the same file's lexical scope." Cross-file resolution, method
+        // calls, and re-exports are out of scope for this pass -- documented
+        // limitation, same spirit as express.js's receiver-name scope note.
+        if (callee.type === "Identifier") {
+          const ln = path.node.loc?.start.line;
+          facts.push({
+            id: nextId("call"),
+            type: "function_call",
+            file: relPath,
+            line: ln,
+            caller: enclosingFunctionName(path),
+            callee: callee.name,
+            confidence,
+            evidence: evidenceFor(lines, ln),
+          });
         }
       },
 
@@ -120,6 +192,7 @@ export function extractFileFacts(filePath, content, rootDir, nextId) {
           file: relPath,
           line: ln,
           name,
+          confidence,
           evidence: evidenceFor(lines, ln),
         });
       },
@@ -146,6 +219,7 @@ export function extractFileFacts(filePath, content, rootDir, nextId) {
           file: relPath,
           line: ln,
           name: id.name,
+          confidence,
           evidence: evidenceFor(lines, ln),
         });
       },
@@ -170,6 +244,7 @@ export function extractFileFacts(filePath, content, rootDir, nextId) {
           file: relPath,
           line: ln,
           name,
+          confidence,
           evidence: evidenceFor(lines, ln),
         });
       },

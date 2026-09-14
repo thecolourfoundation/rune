@@ -279,7 +279,11 @@ async function cmdWatch(rest) {
   const handle = startWatch(dir, {
     onRebuild: ({ ok, graph, error, reason }) => {
       if (ok) {
-        console.log(`[rune] rescanned (${reason}) — ${graph.facts.length} facts, ${graph.derived.length} derived`);
+        if (reason === "watcher-missed-change") {
+          console.log(`[rune] heartbeat caught drift the watcher missed — rescanned automatically (${graph.facts.length} facts, ${graph.derived.length} derived)`);
+        } else {
+          console.log(`[rune] rescanned (${reason}) — ${graph.facts.length} facts, ${graph.derived.length} derived`);
+        }
       } else {
         console.error(`[rune] rescan failed (${reason}): ${error.message}`);
       }

@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { buildGraph, writeGraph } from "../graph/build.js";
+import { verifyFacts } from "../graph/verify.js";
 
 const DEFAULT_IGNORES = new Set([
   "node_modules",
@@ -59,16 +60,32 @@ function listWatchableDirs(rootDir) {
  * still correct, at the cost of a brief re-registration window bounded by
  * the debounce interval.
  *
+ * A second, independent timer runs a periodic drift check (via
+ * graph/verify.js) against the *last-built* graph, entirely apart from the
+ * fs.watch event path. Full rebuilds always produce a fresh, accurate graph
+ * -- the graph itself never goes stale between rebuilds. What can go wrong
+ * instead is the watcher silently missing filesystem events (a known
+ * failure mode of fs.watch on Docker volumes, network filesystems, and
+ * inotify-limited Linux hosts with large repos), which would leave the
+ * graph looking fine while quietly not reflecting recent edits. The
+ * heartbeat re-checks a handful of already-scanned facts against disk on a
+ * fixed cadence; if any have drifted despite no rebuild having fired, that
+ * is direct evidence the watcher missed something, and it forces a
+ * catch-up rebuild automatically instead of leaving the graph wrong until
+ * someone notices.
+ *
  * @param {string} rootDir
- * @param {{ debounceMs?: number, onRebuild?: (result: object) => void }} opts
+ * @param {{ debounceMs?: number, verifyIntervalMs?: number, onRebuild?: (result: object) => void }} opts
  * @returns {{ stop: () => void }}
  */
 export function startWatch(rootDir, opts = {}) {
-  const { debounceMs = 300, onRebuild } = opts;
+  const { debounceMs = 300, verifyIntervalMs = 30000, onRebuild } = opts;
 
   let watchers = [];
   let debounceTimer = null;
+  let verifyTimer = null;
   let stopped = false;
+  let lastGraph = null;
 
   function teardownWatchers() {
     for (const w of watchers) {
@@ -86,6 +103,7 @@ export function startWatch(rootDir, opts = {}) {
     try {
       const graph = buildGraph(rootDir);
       writeGraph(rootDir, graph);
+      lastGraph = graph;
       if (onRebuild) onRebuild({ ok: true, graph, reason });
     } catch (err) {
       if (onRebuild) onRebuild({ ok: false, error: err, reason });
@@ -118,15 +136,32 @@ export function startWatch(rootDir, opts = {}) {
     }, debounceMs);
   }
 
+  // Independent heartbeat: checks whether the last-built graph still
+  // matches disk, entirely apart from whatever fs.watch has (or hasn't)
+  // reported. A positive finding here means the watcher missed real
+  // changes, not that the graph is stale by design -- so it triggers an
+  // immediate catch-up rebuild rather than just logging a warning.
+  function runHeartbeat() {
+    if (stopped || !lastGraph) return;
+    const report = verifyFacts(lastGraph.facts, rootDir);
+    if (report.drifted.length > 0) {
+      rebuild("watcher-missed-change");
+    }
+  }
+
   // Scan immediately so the graph is current the moment watch mode starts,
   // not just after the first detected change.
   rebuild("initial");
   setupWatchers();
+  if (verifyIntervalMs > 0) {
+    verifyTimer = setInterval(runHeartbeat, verifyIntervalMs);
+  }
 
   return {
     stop() {
       stopped = true;
       if (debounceTimer) clearTimeout(debounceTimer);
+      if (verifyTimer) clearInterval(verifyTimer);
       teardownWatchers();
     },
   };

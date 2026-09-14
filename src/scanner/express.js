@@ -1,13 +1,14 @@
 import path from "node:path";
 import { parse } from "@babel/parser";
 import _traverse from "@babel/traverse";
+import { confidenceForFile } from "./confidence.js";
 const traverse = _traverse.default;
 
 /**
  * AST-based extractor - replaces the regex heuristic in the previous version.
  * Same fact schema as before (id, type, method, routePath, receiver, file,
- * line, evidence), so downstream consumers are unaffected. Extraction method
- * changed; nothing else did.
+ * line, evidence), plus a v3 `confidence` field (see confidence.js).
+ * Extraction method changed; nothing else did.
  *
  * Still matches the same receiver names as the regex version ("app" /
  * "router") rather than tracing express() / express.Router() call sites
@@ -24,6 +25,10 @@ function evidenceFor(lines, ln) {
   return lines[ln - 1]?.trim().slice(0, EVIDENCE_MAX_CHARS) || "";
 }
 
+// Resolve a route-path argument to a plain string. Handles string literals
+// and no-substitution template literals (the AST equivalent of the regex's
+// ['"`] character class); anything dynamic (template with expressions,
+// identifiers, concatenation) is not a route we can name statically.
 function staticStringValue(argNode) {
   if (!argNode) return null;
   if (argNode.type === "StringLiteral") return argNode.value;
@@ -35,6 +40,7 @@ function staticStringValue(argNode) {
 
 export function extractExpressRoutes(filePath, content, rootDir, nextId) {
   const relPath = path.relative(rootDir, filePath);
+  const confidence = confidenceForFile(relPath);
   const facts = [];
   const lines = content.split("\n");
 
@@ -46,9 +52,13 @@ export function extractExpressRoutes(filePath, content, rootDir, nextId) {
       errorRecovery: true,
     });
   } catch (err) {
+    // Unparseable file - skip silently, same as v1 on garbage input.
     return facts;
   }
 
+  // See facts.js for why traverse() gets its own try/catch: a valid AST can
+  // still make traverse() throw on unusual real-world code shapes, and one
+  // bad file shouldn't kill the whole repo scan.
   try {
     traverse(ast, {
       CallExpression(path) {
@@ -74,6 +84,7 @@ export function extractExpressRoutes(filePath, content, rootDir, nextId) {
           receiver,
           file: relPath,
           line: ln,
+          confidence,
           evidence: evidenceFor(lines, ln),
         });
       },
