@@ -29,6 +29,7 @@ Connect your AI tool (Claude Code, Cursor, etc.) to the running `rune serve` pro
 - **Trust the answer, don't just hope.** Every claim points to a real file and line — run `rune explain <id>` and see the proof.
 - **Verify before you rely on it.** `rune verify` re-checks every stored fact against the code right now and reports what's changed — the same check any connected AI can run itself via `rune_check_drift` or `rune_verify_fact`.
 - **Catch it before it ships.** Leaked secrets, unsafe scripts, and typosquatted dependencies get flagged automatically.
+- **Ask it, don't just query it.** `rune agent "why is auth failing"` investigates — forms ranked hypotheses backed by live evidence, not a single guess. Exposed as `rune_agent` over MCP too, so any connected AI can delegate the investigation instead of doing it blind.
 - **It can look, but it can't touch.** Rune only reads and reports. It never writes to your code — so it's never the thing that silently breaks something.
 
 ## Docs

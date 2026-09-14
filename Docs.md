@@ -62,6 +62,8 @@ rune serve [dir]
 Starts the MCP server
 rune explain <id>
 Prints the evidence trail behind any fact or conclusion
+rune agent "<objective>" [dir]
+Investigates a high-level objective (e.g. "why is auth failing") using the Rune Agent loop -- read-only, forms ranked hypotheses with evidence
 rune --version
 Prints the installed Rune version
 Configuration
@@ -85,8 +87,45 @@ rune_explain
 Full evidence trail for any id
 rune_get_file_dependencies
 Internal import graph for a file
+rune_agent
+Investigate an objective (forms ranked, evidence-backed hypotheses); response is token-budgeted, default 8000 tokens
 rune_rescan
 Re-scan on demand after code changes
+## The Rune Agent
+
+Beyond querying facts directly, Rune can investigate on your behalf.
+
+```
+rune agent "why is auth failing"
+```
+
+The agent runs a read-only loop: PERCEIVE -> UNDERSTAND -> RETRIEVE relevant facts -> IDENTIFY UNKNOWNS -> FORM HYPOTHESES (one per implicated file) -> GATHER EVIDENCE (re-verifies facts live via the same check `rune verify` uses, and computes impact/dependents) -> REASON -> rank by confidence.
+
+It never edits, commits, or runs anything -- v0 is investigation only. Each run is also logged as an experience (`rune experience list`), so failed investigations aren't silently repeated.
+
+Example:
+
+```
+$ rune agent "why does memory fail to load"
+
+Rune Agent
+
+Objective:
+why does memory fail to load
+
+Relevant facts: 109
+Hypotheses formed: 5
+
+  [supported] (confidence 0.50) "..." is explained by something in src/memory/memory.js
+  ...
+```
+
+### Token budgeting
+
+Available over MCP as `rune_agent`, responses are compressed to fit a token budget (default 8000, override with `maxTokens`) so a connected AI isn't handed more than it needs. Token counts use a documented chars/4 approximation, not a real tokenizer -- good enough for allocation decisions, not for billing-grade counts. The top-ranked hypothesis is always kept in full detail even under a tight budget; only the longer tail of alternate hypotheses, memory, and unknowns gets trimmed. The response includes a `budget` field reporting exactly what was kept vs. dropped.
+
+Current scope: read-only only. No file edits, commits, or installs -- and no approval-gated consequential actions yet either. That's the natural next step.
+
 Current scope and honest limitations
 Rune is intentionally narrow right now:
 Framework support: React, Next.js (pages + app router), Express. Everything else gets generic file/import scanning only.
