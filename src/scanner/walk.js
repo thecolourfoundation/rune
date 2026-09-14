@@ -14,6 +14,12 @@ const DEFAULT_IGNORES = new Set([
 ]);
 
 const CODE_EXTENSIONS = new Set([".js", ".jsx", ".ts", ".tsx", ".mjs", ".cjs"]);
+const SHELL_EXTENSIONS = new Set([".sh", ".bash"]);
+const CONFIG_EXTENSIONS = new Set([".toml", ".yaml", ".yml", ".json", ".jsonc"]);
+// package.json/package-lock.json are already parsed separately by
+// detectProjectKind for dependency info -- treating them as generic
+// config files too would double-count them and produce redundant facts.
+const CONFIG_FILENAME_EXCLUDES = new Set(["package.json", "package-lock.json", "npm-shrinkwrap.json"]);
 
 /**
  * Recursively walks a directory, returning absolute paths of source files
@@ -35,6 +41,8 @@ const CODE_EXTENSIONS = new Set([".js", ".jsx", ".ts", ".tsx", ".mjs", ".cjs"]);
 export function walkSourceFiles(rootDir, opts = {}) {
   const ignore = new Set([...DEFAULT_IGNORES, ...(opts.ignore || [])]);
   const results = [];
+  const shellFiles = [];
+  const configFiles = [];
   const stats = {
     filesDiscovered: 0,
     filesSupported: 0,
@@ -61,9 +69,21 @@ export function walkSourceFiles(rootDir, opts = {}) {
         walk(full);
       } else if (entry.isFile()) {
         stats.filesDiscovered += 1;
-        if (CODE_EXTENSIONS.has(path.extname(name))) {
+        const ext = path.extname(name);
+        if (CODE_EXTENSIONS.has(ext)) {
           results.push(full);
           stats.filesSupported += 1;
+        } else if (SHELL_EXTENSIONS.has(ext)) {
+          shellFiles.push(full);
+          stats.filesSupported += 1;
+        } else if (CONFIG_EXTENSIONS.has(ext) && !CONFIG_FILENAME_EXCLUDES.has(name)) {
+          configFiles.push(full);
+          stats.filesSupported += 1;
+        } else if (CONFIG_EXTENSIONS.has(ext) && CONFIG_FILENAME_EXCLUDES.has(name)) {
+          // Counted as discovered but not "supported" for config purposes --
+          // it's still scanned via detectProjectKind, just not double-counted
+          // here or emitted as generic config_key facts.
+          stats.filesSkippedUnsupportedExtension += 1;
         } else {
           stats.filesSkippedUnsupportedExtension += 1;
         }
@@ -72,7 +92,7 @@ export function walkSourceFiles(rootDir, opts = {}) {
   }
 
   walk(rootDir);
-  return { files: results, stats };
+  return { files: results, shellFiles, configFiles, stats };
 }
 
 export function readFileSafe(filePath) {

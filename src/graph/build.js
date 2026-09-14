@@ -5,6 +5,8 @@ import { extractFileFacts } from "../scanner/facts.js";
 import { extractExpressRoutes } from "../scanner/express.js";
 import { extractNextRoutes } from "../scanner/nextjs.js";
 import { extractVueComponents } from "../scanner/vue.js";
+import { extractShellFacts } from "../scanner/shell.js";
+import { extractConfigFacts } from "../scanner/config.js";
 import { extractSecretFindings } from "../scanner/secrets.js";
 import { extractShellExecFindings } from "../scanner/shellexec.js";
 import { extractWorkflowFindings } from "../scanner/workflow.js";
@@ -53,7 +55,7 @@ export function buildGraph(rootDir, options = {}) {
 
   const config = readConfig(rootDir);
   const projectInfo = detectProjectKind(rootDir);
-  const { files, stats: walkStats } = walkSourceFiles(rootDir, { ignore: config.ignore });
+  const { files, shellFiles, configFiles, stats: walkStats } = walkSourceFiles(rootDir, { ignore: config.ignore });
   const nextId = createIdGenerator();
 
   const facts = [];
@@ -95,6 +97,51 @@ export function buildGraph(rootDir, options = {}) {
     filesActuallyScanned += 1;
     if (onProgress && filesActuallyScanned % 200 === 0) {
       onProgress({ scanned: filesActuallyScanned, total: files.length });
+    }
+  }
+
+  // Shell and config files use their own extractors (not JS/TS-aware),
+  // so they run in a separate loop with the same timeout/read-failure/
+  // scanWarnings handling as the main loop above.
+  if (!timedOut) {
+    for (const filePath of shellFiles) {
+      if (maxScanMs !== null && Date.now() - scanStart > maxScanMs) {
+        timedOut = true;
+        break;
+      }
+      const relPath = path.relative(rootDir, filePath);
+      const content = readFileSafe(filePath);
+      if (content == null) {
+        scanWarnings.push({ file: relPath, error: "file could not be read" });
+        continue;
+      }
+      try {
+        facts.push(...extractShellFacts(filePath, content, rootDir, nextId));
+      } catch (err) {
+        scanWarnings.push({ file: relPath, error: err.message });
+      }
+      filesActuallyScanned += 1;
+    }
+  }
+
+  if (!timedOut) {
+    for (const filePath of configFiles) {
+      if (maxScanMs !== null && Date.now() - scanStart > maxScanMs) {
+        timedOut = true;
+        break;
+      }
+      const relPath = path.relative(rootDir, filePath);
+      const content = readFileSafe(filePath);
+      if (content == null) {
+        scanWarnings.push({ file: relPath, error: "file could not be read" });
+        continue;
+      }
+      try {
+        facts.push(...extractConfigFacts(filePath, content, rootDir, nextId));
+      } catch (err) {
+        scanWarnings.push({ file: relPath, error: err.message });
+      }
+      filesActuallyScanned += 1;
     }
   }
 
