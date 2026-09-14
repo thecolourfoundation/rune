@@ -2,6 +2,7 @@ import path from "node:path";
 import fs from "node:fs";
 import { buildGraph, writeGraph, readGraph, RUNE_DIR, GRAPH_FILENAME } from "../graph/build.js";
 import { verifyFacts } from "../graph/verify.js";
+import { runAgentLoop } from "../agent/loop.js";
 import { getVersion } from "../version.js";
 import {
   addProjectMemory,
@@ -22,6 +23,7 @@ Usage:
   rune serve [dir]    Start the MCP server so AI clients can query it
   rune explain <id>   Show the evidence trail behind a fact or conclusion
   rune verify [dir]    Check stored facts against the current code (drift report)
+  rune agent "<objective>" [dir]  Investigate an objective using the Rune Agent loop
   rune memory <cmd>   Manage project memory (add/list/approve/reject)
   rune experience <cmd>  Log and review past task outcomes (add/list)
   rune --version      Print the installed Rune version
@@ -41,7 +43,9 @@ Experience commands:
 export async function runCli(args) {
   const [command, ...rest] = args;
 
-  switch (command) {
+    switch (command) {
+    case "agent":
+      return cmdAgent(rest);
     case undefined:
     case "-h":
     case "--help":
@@ -596,5 +600,32 @@ async function cmdExperienceList(rest) {
 
   for (const e of entries) {
     console.log(`${e.id}  [${e.outcome}]  ${e.taskDescription}`);
+  }
+}
+
+async function cmdAgent(rest) {
+  const objective = rest[0];
+  const dir = rest[1] ? path.resolve(rest[1]) : process.cwd();
+  if (!objective) {
+    console.error('Usage: rune agent "<objective>" [dir]');
+    process.exitCode = 1;
+    return;
+  }
+  const report = runAgentLoop(objective, dir);
+  console.log(`\nRune Agent\n`);
+  console.log(`Objective:\n${report.objective}\n`);
+  console.log(`Relevant facts: ${report.relevantFactCount}`);
+  console.log(`Relevant memory: ${report.relevantMemory.length}`);
+  console.log(`Unknowns: ${report.unknowns.join(", ") || "none"}`);
+  console.log(`Hypotheses formed: ${report.hypotheses.length}\n`);
+  for (const hyp of report.hypotheses) {
+    console.log(`  [${hyp.status}] (confidence ${hyp.confidence.toFixed(2)}) ${hyp.description}`);
+  }
+  if (report.topHypothesis) {
+    console.log(`\nTop hypothesis:\n  ${report.topHypothesis.description}`);
+    console.log(`  Confidence: ${report.topHypothesis.confidence.toFixed(2)}`);
+    console.log(`  Status: ${report.topHypothesis.status}`);
+  } else {
+    console.log("\nNo hypotheses could be formed — objective keywords matched nothing in the graph.");
   }
 }
