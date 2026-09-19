@@ -11,7 +11,8 @@ const INSTRUCTION_VOCAB = new Set([
   "confidence", "architectural", "architecture", "dependency", "dependencies",
   "hotspot", "hotspots", "component", "components", "relate", "relates",
   "relationship", "exactly", "major", "important", "using", "graph",
-  "matters",
+  "matters", "top", "overview", "takeaway", "takeaways",
+  "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten",
 ]);
 
 const STOPWORDS = new Set([
@@ -25,6 +26,8 @@ const TASK_PATTERNS = [
   { taskType: "dependency-trace", pattern: /depend(s|ency|encies)? on|what uses|impact of/i },
   { taskType: "hotspot-analysis", pattern: /hotspot|risk(iest)?|complexity/i },
   { taskType: "bug-investigation", pattern: /why does|fails?|broken|error/i },
+  // Last on purpose: generic insight requests, so specific task types win.
+  { taskType: "architecture-overview", pattern: /\b(insights?|overview|takeaways?)\b/i },
 ];
 
 function classifyTaskType(objective) {
