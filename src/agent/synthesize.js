@@ -27,23 +27,52 @@ const AREA_DESCRIPTIONS = [
   { pattern: /^plans\//, insight: "Planning notes", why: "Forward-looking design notes, not shipped behavior — lower urgency than active code." },
 ];
 
-function describeArea(area, factCount) {
+// Turns the facts behind an insight into a plain description. Returns null
+// when the facts don't support a specific statement (caller falls back).
+function describeEvidence(facts) {
+  const usable = (facts || []).filter(Boolean);
+  if (usable.length === 0) return null;
+
+  const routes = usable.filter((f) => /route/.test(String(f.type)) && (f.routePath || f.route));
+  if (routes.length > 0) {
+    const shown = routes.slice(0, 3).map((f) => `${f.method ? f.method + " " : ""}${f.routePath || f.route}`);
+    const more = routes.length > shown.length ? ` (+${routes.length - shown.length} more)` : "";
+    return `Defines routes: ${shown.join(", ")}${more}.`;
+  }
+
+  const imports = usable.filter((f) => /import|require/.test(String(f.type)) && typeof f.target === "string" && f.target);
+  if (imports.length > 0) {
+    const external = [...new Set(imports.map((f) => f.target).filter((t) => !t.startsWith(".") && !t.startsWith("/") && !t.startsWith("node:")))];
+    if (external.length > 0) {
+      const names = external.slice(0, 3).map((t) => "`" + t + "`").join(", ");
+      const ev = typeof imports[0].evidence === "string" ? ` (${imports[0].evidence.trim().slice(0, 80)})` : "";
+      return `Loads the external package ${names}${ev} - logic tied to this name likely lives there, not in this repo.`;
+    }
+    const internal = [...new Set(imports.map((f) => f.target))].slice(0, 3).map((t) => "`" + t + "`").join(", ");
+    return `Imports local module ${internal}.`;
+  }
+  return null;
+}
+
+function describeArea(area, factCount, evidenceFacts) {
   const match = AREA_DESCRIPTIONS.find((d) => d.pattern.test(area));
   if (match) return { insight: match.insight, whyItMatters: match.why };
   return {
     insight: area,
-    whyItMatters: `${factCount} related fact(s) grouped under this path.`,
+    whyItMatters: describeEvidence(evidenceFacts) || `${factCount} related fact(s) grouped under this path.`,
   };
 }
 
 // Default when the objective asks for no specific count.
 const DEFAULT_MAX_INSIGHTS = 8;
 
-export function synthesize(rankedHypotheses, outputConstraints = {}) {
+export function synthesize(rankedHypotheses, outputConstraints = {}, factsById = new Map()) {
   const areaClusters = clusterByArea(rankedHypotheses);
   const merged = new Map();
   for (const cluster of areaClusters) {
-    const { insight, whyItMatters } = describeArea(cluster.area, cluster.hypotheses[0].relatedFactIds.length);
+    const topHyp = [...cluster.hypotheses].sort((x, y) => y.confidence - x.confidence)[0];
+    const evidenceFacts = topHyp.relatedFactIds.slice(0, 5).map((id) => factsById.get(id));
+    const { insight, whyItMatters } = describeArea(cluster.area, cluster.hypotheses[0].relatedFactIds.length, evidenceFacts);
     if (!merged.has(insight)) {
       merged.set(insight, { insight, whyItMatters, area: cluster.area, hypotheses: [], maxConfidence: 0 });
     }

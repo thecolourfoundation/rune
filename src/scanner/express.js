@@ -71,6 +71,10 @@ export function extractExpressRoutes(filePath, content, rootDir, nextId) {
         const method = callee.property.name;
         if (!RECEIVER_NAMES.has(receiver) || !HTTP_METHODS.has(method)) return;
 
+        // app.get('setting') with a single argument reads an Express setting;
+        // a real route always has a path AND at least one handler.
+        if (path.node.arguments.length < 2) return;
+
         const routePath = staticStringValue(path.node.arguments[0]);
         if (routePath === null) return;
         if (method === "use" && !routePath.startsWith("/")) return;

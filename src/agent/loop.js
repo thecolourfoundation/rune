@@ -1,3 +1,9 @@
+import { confidenceForFile } from "../scanner/confidence.js";
+// Shell/Lua/config scanners don't set fact.confidence, so also judge by path.
+function isLowConfidence(f) {
+  return f.confidence === "low" || confidenceForFile(String(f.file || "")) === "low";
+}
+
 /**
  * The Rune Agent core loop: PERCEIVE -> UNDERSTAND -> RETRIEVE ->
  * IDENTIFY UNKNOWNS -> FORM HYPOTHESES -> GATHER EVIDENCE -> REASON ->
@@ -36,7 +42,7 @@ function filterDiscriminatingKeywords(graph, keywords) {
 // No named entity + architecture-overview: use the whole graph minus
 // call-graph noise (function_call) and low-confidence (test/fixture) facts.
 function retrieveOverviewFacts(graph) {
-  const base = graph.facts.filter((f) => f.type !== "function_call" && !String(f.type).startsWith("doc_") && f.confidence !== "low");
+  const base = graph.facts.filter((f) => f.type !== "function_call" && !String(f.type).startsWith("doc_") && !isLowConfidence(f));
   const code = base.filter((f) => f.type !== "config_key");
   return code.length >= 20 ? code : base;
 }
@@ -58,8 +64,10 @@ const SECONDARY_KEYWORD_RE = /^(tests?|specs?|fixtures?|mocks?|examples?|samples
 function retrieveRelevantFacts(graph, keywords) {
   const all = retrieveRelevantFactsRaw(graph, keywords);
   if (keywords.some((k) => SECONDARY_KEYWORD_RE.test(k))) return all;
-  const primary = all.filter((f) => f.confidence !== "low" && !SECONDARY_PATH_RE.test(String(f.file || "")));
-  return primary.length >= 5 ? primary : all;
+  const primary = all.filter((f) => !isLowConfidence(f) && !SECONDARY_PATH_RE.test(String(f.file || "")));
+  const code = primary.filter((f) => !/\.(md|mdx|txt|rst)$/i.test(String(f.file || "")) && !String(f.type).startsWith("doc_"));
+  if (code.length > 0) return code;
+  return primary.length > 0 ? primary : all;
 }
 
 function retrieveRelevantFactsRaw(graph, keywords) {
@@ -128,7 +136,7 @@ export function runAgentLoop(objective, rootDir, options = {}) {
   let hypotheses = formHypotheses(intent, relevantFacts);
   hypotheses = gatherEvidenceAndReason(hypotheses, graph, rootDir);
   const ranked = rankHypotheses(hypotheses);
-  const synthesis = synthesize(ranked, intent.outputConstraints);
+  const synthesis = synthesize(ranked, intent.outputConstraints, new Map((graph.facts || []).map((f) => [f.id, f])));
 
   const outcome = ranked.length > 0 && ranked[0].confidence >= 0.5 ? "success" : "failure";
   addExperience(rootDir, {
