@@ -2,21 +2,21 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
+// Injected at build time by scripts/build-binary.sh (esbuild --define).
+// Undefined when running from source, where package.json is read instead.
+const BUILD_VERSION =
+  typeof __RUNE_VERSION__ !== "undefined" ? __RUNE_VERSION__ : null;
 let cached;
 
-/**
- * Reads the version from this package's own package.json, once, and caches
- * it. Every place that needs Rune's version (the understanding graph's
- * meta.rune field, the MCP server's reported version, `rune --version`)
- * calls this instead of hardcoding a string that will silently drift from
- * package.json the next time it's bumped.
- */
+/** Rune's version: build-time constant in the binary, package.json from source. */
 export function getVersion() {
   if (cached) return cached;
-  const pkgPath = path.join(__dirname, "..", "package.json");
+  if (BUILD_VERSION) return (cached = BUILD_VERSION);
   try {
-    const pkg = JSON.parse(fs.readFileSync(pkgPath, "utf8"));
+    const dir = path.dirname(fileURLToPath(import.meta.url));
+    const pkg = JSON.parse(
+      fs.readFileSync(path.join(dir, "..", "package.json"), "utf8")
+    );
     cached = pkg.version || "0.0.0";
   } catch {
     cached = "0.0.0";
