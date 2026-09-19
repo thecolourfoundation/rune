@@ -33,6 +33,16 @@ function parseConfigContent(content, ext) {
   return null;
 }
 
+function findKeyLine(lines, key) {
+  const basic = findKeyLineBasic(lines, key);
+  if (basic) return basic;
+  // TOML tables: [key], [key.sub], [[key]], [parent.key.sub]
+  const esc = String(key).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const re = new RegExp("^\\s*\\[\\[?\\s*(?:[\\w-]+\\.)*" + esc + "(?:\\.[\\w-]+)*\\s*\\]\\]?\\s*(?:#.*)?$");
+  for (let i = 0; i < lines.length; i++) if (re.test(lines[i])) return i + 1;
+  return null;
+}
+
 function evidenceFor(lines, ln) {
   if (!ln) return "";
   return lines[ln - 1]?.trim().slice(0, EVIDENCE_MAX_CHARS) || "";
@@ -41,7 +51,7 @@ function evidenceFor(lines, ln) {
 // Find the line number of a top-level key by searching for it textually.
 // Not perfect (doesn't handle duplicate key names across sections) but
 // gives a real, usually-correct location rather than no location at all.
-function findKeyLine(lines, key) {
+function findKeyLineBasic(lines, key) {
   const re = new RegExp(`^\\s*["']?${key.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}["']?\\s*[:=]`);
   for (let i = 0; i < lines.length; i++) {
     if (re.test(lines[i])) return i + 1;

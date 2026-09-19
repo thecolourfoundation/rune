@@ -33,6 +33,14 @@ function filterDiscriminatingKeywords(graph, keywords) {
   return [scored[0].kw];
 }
 
+// No named entity + architecture-overview: use the whole graph minus
+// call-graph noise (function_call) and low-confidence (test/fixture) facts.
+function retrieveOverviewFacts(graph) {
+  const base = graph.facts.filter((f) => f.type !== "function_call" && !String(f.type).startsWith("doc_") && f.confidence !== "low");
+  const code = base.filter((f) => f.type !== "config_key");
+  return code.length >= 20 ? code : base;
+}
+
 function retrieveRelevantFacts(graph, keywords) {
   if (keywords.length === 0) return [];
   return graph.facts.filter((fact) => {
@@ -81,7 +89,10 @@ export function runAgentLoop(objective, rootDir, options = {}) {
   const intent = parseIntent(objective);
   const keywords = intent.targetEntities;
   const keywords2 = filterDiscriminatingKeywords(graph, keywords);
-  const relevantFacts = retrieveRelevantFacts(graph, keywords2);
+  const relevantFacts =
+    keywords2.length === 0 && intent.taskType === "architecture-overview"
+      ? retrieveOverviewFacts(graph)
+      : retrieveRelevantFacts(graph, keywords2);
   const relevantMemory = listProjectMemory(rootDir, { statusFilter: "approved" }).filter((m) =>
     keywords.some((kw) => (m.rule || "").toLowerCase().includes(kw))
   );

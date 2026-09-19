@@ -53,6 +53,14 @@ function extractOutputConstraints(objective) {
   const constraints = {};
   const exactCount = objective.match(/exactly (\d+)/i);
   if (exactCount) constraints.exactCount = parseInt(exactCount[1], 10);
+  if (!constraints.exactCount) {
+    const WORDS = { one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10 };
+    const m = objective.match(/\b(\d+|one|two|three|four|five|six|seven|eight|nine|ten)\s+(?:[a-z-]+\s+){0,2}?(?:insights?|findings?|hypothes[ei]s|areas?|components?|modules?|issues?|risks?|takeaways?|points?)\b/i);
+    if (m) {
+      const v = /^\d+$/.test(m[1]) ? parseInt(m[1], 10) : WORDS[m[1].toLowerCase()];
+      if (v > 0) constraints.exactCount = v;
+    }
+  }
   const maxWords = objective.match(/(?:under|max(?:imum)?)\s+(\d+)\s+words?/i);
   if (maxWords) constraints.maxWords = parseInt(maxWords[1], 10);
   const maxEvidence = objective.match(/max(?:imum)?\s+(\d+)\s+evidence/i);

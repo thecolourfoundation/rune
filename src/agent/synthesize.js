@@ -32,7 +32,7 @@ function describeArea(area, factCount) {
   if (match) return { insight: match.insight, whyItMatters: match.why };
   return {
     insight: area,
-    whyItMatters: `A distinct functional area with ${factCount} related fact(s); no heuristic category matched, so this label is the raw path prefix.`,
+    whyItMatters: `${factCount} related fact(s) grouped under this path.`,
   };
 }
 
