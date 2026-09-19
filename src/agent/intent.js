@@ -19,6 +19,8 @@ const INSTRUCTION_VOCAB = new Set([
 ]);
 
 const STOPWORDS = new Set([
+  // question/filler words (never search targets)
+  "how", "does", "do", "did", "work", "works", "working", "what", "why", "where", "which", "who", "when", "is", "are", "can", "could", "should", "explain", "tell", "show", "me", "about", "the", "this", "that",
   "the", "is", "are", "why", "what", "how", "this", "that", "with", "for",
   "and", "does", "do", "a", "an", "in", "on", "of", "to", "it", "its",
   "each", "not", "can", "will", "has", "have", "was", "were", "when", "where", "which",

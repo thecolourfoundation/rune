@@ -51,7 +51,18 @@ function expandKeyword(kw) {
   return [...out];
 }
 
+const SECONDARY_PATH_RE = /(^|[\\/])(examples?|samples?|demos?|benchmarks?)([\\/]|$)/i;
+const SECONDARY_KEYWORD_RE = /^(tests?|specs?|fixtures?|mocks?|examples?|samples?|demos?|benchmarks?)/i;
+// Prefer production code: test/fixture/example facts only fill in when
+// production matches are scarce, or when the question is about them.
 function retrieveRelevantFacts(graph, keywords) {
+  const all = retrieveRelevantFactsRaw(graph, keywords);
+  if (keywords.some((k) => SECONDARY_KEYWORD_RE.test(k))) return all;
+  const primary = all.filter((f) => f.confidence !== "low" && !SECONDARY_PATH_RE.test(String(f.file || "")));
+  return primary.length >= 5 ? primary : all;
+}
+
+function retrieveRelevantFactsRaw(graph, keywords) {
   if (keywords.length === 0) return [];
   return graph.facts.filter((fact) => {
     const haystack = [fact.file, fact.name, fact.target, fact.type]

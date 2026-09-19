@@ -17,6 +17,7 @@ const HELP = `
 Rune — the Software Intelligence Runtime
 
 Usage:
+  rune "<question>"   Ask Rune about this project (scans on first use)
   rune init [dir]     Set up Rune in the current (or given) project
   rune scan [dir]     Build (or rebuild) the understanding graph, once
   rune watch [dir]    Keep the understanding graph current as files change
@@ -74,7 +75,10 @@ export async function runCli(args) {
     case "experience":
       return cmdExperience(rest);
     default:
-      console.log(`Unknown command: ${command}\n${HELP}`);
+      if (command && command.includes(" ")) {
+      return cmdAgent([command, ...rest]);
+    }
+    console.log(`Unknown command: ${command}\n${HELP}`);
       process.exitCode = 1;
   }
 }
@@ -614,6 +618,10 @@ async function cmdAgent(rest) {
     console.error('Usage: rune agent "<objective>" [dir] [--debug]');
     process.exitCode = 1;
     return;
+  }
+  if (!readGraph(dir)) {
+    console.error("[rune] first run: scanning this project...");
+    writeGraph(dir, buildGraph(dir));
   }
   const report = runAgentLoop(objective, dir);
 
