@@ -36,6 +36,9 @@ function describeArea(area, factCount) {
   };
 }
 
+// Default when the objective asks for no specific count.
+const DEFAULT_MAX_INSIGHTS = 8;
+
 export function synthesize(rankedHypotheses, outputConstraints = {}) {
   const areaClusters = clusterByArea(rankedHypotheses);
   const merged = new Map();
@@ -52,6 +55,8 @@ export function synthesize(rankedHypotheses, outputConstraints = {}) {
 
   if (outputConstraints.exactCount) {
     mergedClusters = mergedClusters.slice(0, outputConstraints.exactCount);
+  } else if (mergedClusters.length > DEFAULT_MAX_INSIGHTS) {
+    mergedClusters = mergedClusters.slice(0, DEFAULT_MAX_INSIGHTS);
   }
 
   const evidenceCap = outputConstraints.maxEvidenceRefs ?? 5;
