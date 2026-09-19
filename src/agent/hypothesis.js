@@ -1,8 +1,7 @@
 /**
  * Hypothesis engine: represents competing explanations the Rune Agent
  * investigates during an objective, and tracks how evidence shifts
- * confidence in each one. Deliberately simple state machine — no ML,
- * just explicit status transitions with a provenance trail.
+ * confidence in each one.
  */
 
 let hypothesisCounter = 0;
@@ -19,7 +18,7 @@ export function createHypothesis(description, { relatedFactIds = [] } = {}) {
   return {
     id: nextHypothesisId(),
     description,
-    status: "open", // open | supported | contradicted | eliminated | confirmed
+    status: "open",
     confidence: 0.3,
     relatedFactIds: [...relatedFactIds],
     evidence: [],
@@ -31,9 +30,10 @@ function addEvidence(hypothesis, type, note, factId) {
   return hypothesis;
 }
 
-export function supportHypothesis(hypothesis, note, factId) {
+export function supportHypothesis(hypothesis, note, factId, strength = 1) {
   addEvidence(hypothesis, "supports", note, factId);
-  hypothesis.confidence = Math.min(0.95, hypothesis.confidence + 0.2);
+  const s = Math.max(1, strength);
+  hypothesis.confidence = Math.min(0.95, 0.3 + 0.6 * (s / (s + 5)));
   hypothesis.status = hypothesis.confidence >= 0.8 ? "confirmed" : "supported";
   return hypothesis;
 }

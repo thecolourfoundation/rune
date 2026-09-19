@@ -2,17 +2,13 @@
  * The Rune Agent core loop: PERCEIVE -> UNDERSTAND -> RETRIEVE ->
  * IDENTIFY UNKNOWNS -> FORM HYPOTHESES -> GATHER EVIDENCE -> REASON ->
  * PLAN -> ACT -> OBSERVE -> VERIFY -> LEARN.
- *
- * v0 scope cut: read-only investigation only. No consequential actions
- * (file edits, commits, installs) are taken. The loop's job right now is
- * to prove out evidence-backed reasoning over the existing
- * graph/impact/verify/memory infrastructure, not to become a full
- * autonomous coding agent in one pass.
  */
 import { buildGraph, readGraph } from "../graph/build.js";
 import { verifyFacts } from "../graph/verify.js";
 import { computeImpact } from "../graph/impact.js";
 import { listProjectMemory, addExperience } from "../memory/memory.js";
+import { parseIntent } from "./intent.js";
+import { synthesize } from "./synthesize.js";
 import {
   createHypothesis,
   supportHypothesis,
@@ -20,27 +16,23 @@ import {
   rankHypotheses,
 } from "./hypothesis.js";
 
-const STOPWORDS = new Set([
-  "the", "is", "are", "why", "what", "how", "this", "that", "with", "for",
-  "and", "does", "do", "a", "an", "in", "on", "of", "to", "it", "its",
-]);
+const MIN_BROAD_MATCH_COUNT = 20;
 
-/**
- * Naive keyword extraction from an objective string. This is the seam
- * where a real LLM call replaces keyword matching later, without
- * changing anything downstream that consumes the keyword list.
- */
-function extractKeywords(objective) {
-  return [...new Set(
-    objective
-      .toLowerCase()
-      .replace(/[^a-z0-9_./-]+/g, " ")
-      .split(" ")
-      .filter((word) => word.length > 2 && !STOPWORDS.has(word))
-  )];
+function filterDiscriminatingKeywords(graph, keywords) {
+  if (keywords.length <= 1 || graph.facts.length === 0) return keywords;
+  const scored = keywords.map((kw) => {
+    const count = graph.facts.filter((fact) => {
+      const haystack = [fact.file, fact.name, fact.target, fact.type].filter(Boolean).join(" ").toLowerCase();
+      return haystack.includes(kw);
+    }).length;
+    return { kw, count, ratio: count / graph.facts.length };
+  });
+  const discriminating = scored.filter((s) => !(s.ratio >= 0.5 && s.count >= MIN_BROAD_MATCH_COUNT)).map((s) => s.kw);
+  if (discriminating.length > 0) return discriminating;
+  scored.sort((a, b) => a.ratio - b.ratio);
+  return [scored[0].kw];
 }
 
-/** RETRIEVE: cheap substring match against fact file/name/target/type. */
 function retrieveRelevantFacts(graph, keywords) {
   if (keywords.length === 0) return [];
   return graph.facts.filter((fact) => {
@@ -52,22 +44,16 @@ function retrieveRelevantFacts(graph, keywords) {
   });
 }
 
-/** FORM HYPOTHESES: one hypothesis per distinct file touched by relevant facts. */
-function formHypotheses(objective, relevantFacts) {
+function formHypotheses(intent, relevantFacts) {
   const files = [...new Set(relevantFacts.map((f) => f.file).filter(Boolean))];
   return files.map((file) => {
     const factIds = relevantFacts.filter((f) => f.file === file).map((f) => f.id);
-    return createHypothesis(`"${objective}" is explained by something in ${file}`, {
+    return createHypothesis(`${intent.taskType.replace(/-/g, " ")}: ${file}`, {
       relatedFactIds: factIds,
     });
   });
 }
 
-/**
- * GATHER EVIDENCE + REASON: re-verifies each hypothesis's related facts
- * against the live filesystem and checks impact (dependents). Drifted
- * facts contradict a hypothesis; still-confirmed facts support it.
- */
 function gatherEvidenceAndReason(hypotheses, graph, rootDir) {
   for (const hyp of hypotheses) {
     const relatedFacts = graph.facts.filter((f) => hyp.relatedFactIds.includes(f.id));
@@ -80,26 +66,22 @@ function gatherEvidenceAndReason(hypotheses, graph, rootDir) {
       contradictHypothesis(hyp, `${drifted.length} related fact(s) have drifted or are missing`, drifted[0].id);
       continue;
     }
-    supportHypothesis(hyp, `${relatedFacts.length} fact(s) still confirmed`);
+    supportHypothesis(hyp, `${relatedFacts.length} fact(s) still confirmed`, null, relatedFacts.length);
     hyp.impact = impact;
   }
   return hypotheses;
 }
 
-/**
- * Runs one full pass of the agent loop for a given objective. Returns a
- * report object (not a print) so the CLI, MCP server, and tests can each
- * present it differently.
- */
 export function runAgentLoop(objective, rootDir, options = {}) {
   if (!objective || typeof objective !== "string") {
     throw new Error("runAgentLoop requires a non-empty objective string");
   }
 
   const graph = readGraph(rootDir) ?? buildGraph(rootDir, options);
-  const keywords = extractKeywords(objective);
-
-  const relevantFacts = retrieveRelevantFacts(graph, keywords);
+  const intent = parseIntent(objective);
+  const keywords = intent.targetEntities;
+  const keywords2 = filterDiscriminatingKeywords(graph, keywords);
+  const relevantFacts = retrieveRelevantFacts(graph, keywords2);
   const relevantMemory = listProjectMemory(rootDir, { statusFilter: "approved" }).filter((m) =>
     keywords.some((kw) => (m.rule || "").toLowerCase().includes(kw))
   );
@@ -111,9 +93,10 @@ export function runAgentLoop(objective, rootDir, options = {}) {
       )
   );
 
-  let hypotheses = formHypotheses(objective, relevantFacts);
+  let hypotheses = formHypotheses(intent, relevantFacts);
   hypotheses = gatherEvidenceAndReason(hypotheses, graph, rootDir);
   const ranked = rankHypotheses(hypotheses);
+  const synthesis = synthesize(ranked, intent.outputConstraints);
 
   const outcome = ranked.length > 0 && ranked[0].confidence >= 0.5 ? "success" : "failure";
   addExperience(rootDir, {
@@ -125,6 +108,8 @@ export function runAgentLoop(objective, rootDir, options = {}) {
 
   return {
     objective,
+    intent,
+    synthesis,
     keywords,
     relevantFactCount: relevantFacts.length,
     relevantMemory,

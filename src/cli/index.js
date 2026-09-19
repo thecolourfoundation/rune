@@ -433,9 +433,12 @@ function parseFlags(args) {
   const flags = {};
   const positional = [];
   for (const arg of args) {
-    const match = /^--([\w-]+)=(.*)$/.exec(arg);
-    if (match) {
-      flags[match[1]] = match[2];
+    const kv = /^--([\w-]+)=(.*)$/.exec(arg);
+    const bare = /^--([\w-]+)$/.exec(arg);
+    if (kv) {
+      flags[kv[1]] = kv[2];
+    } else if (bare) {
+      flags[bare[1]] = true;
     } else {
       positional.push(arg);
     }
@@ -604,28 +607,44 @@ async function cmdExperienceList(rest) {
 }
 
 async function cmdAgent(rest) {
-  const objective = rest[0];
-  const dir = rest[1] ? path.resolve(rest[1]) : process.cwd();
+  const { flags, positional } = parseFlags(rest);
+  const objective = positional[0];
+  const dir = positional[1] ? path.resolve(positional[1]) : process.cwd();
   if (!objective) {
-    console.error('Usage: rune agent "<objective>" [dir]');
+    console.error('Usage: rune agent "<objective>" [dir] [--debug]');
     process.exitCode = 1;
     return;
   }
   const report = runAgentLoop(objective, dir);
+
+  if (flags.debug !== undefined) {
+    console.log(`\n[debug] intent:`, JSON.stringify(report.intent, null, 2));
+    console.log(`[debug] relevantFactCount: ${report.relevantFactCount}`);
+    console.log(`[debug] raw hypotheses formed: ${report.hypotheses.length}\n`);
+  }
+
   console.log(`\nRune Agent\n`);
   console.log(`Objective:\n${report.objective}\n`);
+  console.log(`Task type: ${report.intent.taskType}`);
+  console.log(`Target entities: ${report.intent.targetEntities.join(", ") || "none"}`);
   console.log(`Relevant facts: ${report.relevantFactCount}`);
-  console.log(`Relevant memory: ${report.relevantMemory.length}`);
-  console.log(`Unknowns: ${report.unknowns.join(", ") || "none"}`);
-  console.log(`Hypotheses formed: ${report.hypotheses.length}\n`);
-  for (const hyp of report.hypotheses) {
-    console.log(`  [${hyp.status}] (confidence ${hyp.confidence.toFixed(2)}) ${hyp.description}`);
+  console.log(`Unknowns: ${report.unknowns.join(", ") || "none"}\n`);
+
+  if (report.synthesis.insights.length === 0) {
+    console.log("No insights could be synthesized — objective's target entities matched nothing in the graph.");
+    return;
   }
-  if (report.topHypothesis) {
-    console.log(`\nTop hypothesis:\n  ${report.topHypothesis.description}`);
-    console.log(`  Confidence: ${report.topHypothesis.confidence.toFixed(2)}`);
-    console.log(`  Status: ${report.topHypothesis.status}`);
-  } else {
-    console.log("\nNo hypotheses could be formed — objective keywords matched nothing in the graph.");
+
+  const graphForExplain = readGraph(dir);
+  console.log(`${report.synthesis.insights.length} insight(s):\n`);
+  for (const insight of report.synthesis.insights) {
+    console.log(`${insight.rank}. ${insight.insight}`);
+    console.log(`   Why it matters: ${insight.whyItMatters}`);
+    console.log(`   Confidence: ${insight.confidence.toFixed(2)}  (${insight.supportingHypotheses} supporting hypothesis/es)`);
+    const resolved = insight.evidenceRefs.map((id) => {
+      const fact = graphForExplain?.facts.find((f) => f.id === id);
+      return fact ? `${fact.file}:${fact.line ?? "?"}` : id;
+    });
+    console.log(`   Evidence: ${resolved.join(", ") || "none"}\n`);
   }
 }
