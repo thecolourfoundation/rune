@@ -41,6 +41,16 @@ function retrieveOverviewFacts(graph) {
   return code.length >= 20 ? code : base;
 }
 
+// Light morphology: "routing" also finds route/router, "handling" finds handle/handler.
+// No bare-stem variant ("rout" would match "routine"); stems under 4 chars are skipped.
+function expandKeyword(kw) {
+  const out = new Set([kw]);
+  const ing = kw.match(/^(.{4,})ing$/);
+  if (ing) { out.add(ing[1] + "e"); out.add(ing[1] + "er"); if (ing[1].length >= 5) out.add(ing[1]); }
+  if (kw.length > 4 && kw.endsWith("s")) out.add(kw.slice(0, -1));
+  return [...out];
+}
+
 function retrieveRelevantFacts(graph, keywords) {
   if (keywords.length === 0) return [];
   return graph.facts.filter((fact) => {
@@ -48,7 +58,7 @@ function retrieveRelevantFacts(graph, keywords) {
       .filter(Boolean)
       .join(" ")
       .toLowerCase();
-    return keywords.some((kw) => haystack.includes(kw));
+    return keywords.some((kw) => expandKeyword(kw).some((v) => haystack.includes(v)));
   });
 }
 

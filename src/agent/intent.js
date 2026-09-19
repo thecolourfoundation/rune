@@ -13,12 +13,17 @@ const INSTRUCTION_VOCAB = new Set([
   "relationship", "exactly", "major", "important", "using", "graph",
   "matters", "top", "overview", "takeaway", "takeaways",
   "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten",
+  // symptom words: the task type already captures these, they are not search terms
+  "fail", "fails", "failing", "failed", "failure", "failures", "broken",
+  "crash", "crashes", "bug", "bugs", "wrong", "working",
 ]);
 
 const STOPWORDS = new Set([
   "the", "is", "are", "why", "what", "how", "this", "that", "with", "for",
   "and", "does", "do", "a", "an", "in", "on", "of", "to", "it", "its",
-  "each",
+  "each", "not", "can", "will", "has", "have", "was", "were", "when", "where", "which",
+  "who", "from", "into", "there", "but", "any", "all", "our", "you", "your", "should",
+  "would", "could", "doesn", "isn", "don", "won", "cant",
 ]);
 
 const TASK_PATTERNS = [
