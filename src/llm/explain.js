@@ -61,9 +61,9 @@ export function verifyStatements(statements, facts) {
 export async function explainReport(report, graph, env = process.env, fetchImpl = globalThis.fetch) {
   const provider = resolveProvider(env);
   if (!provider) {
-    return { skipped: "no model configured. Set ANTHROPIC_API_KEY, or OPENAI_API_KEY with RUNE_LLM_MODEL, or RUNE_LLM_BASE_URL (for example a local Ollama) with RUNE_LLM_MODEL." };
+    return { needsSetup: true, skipped: "no model configured. Set ANTHROPIC_API_KEY, or OPENAI_API_KEY with RUNE_LLM_MODEL, or RUNE_LLM_BASE_URL (for example a local Ollama) with RUNE_LLM_MODEL." };
   }
-  if (provider.error) return { skipped: provider.error };
+  if (provider.error) return { needsSetup: true, skipped: provider.error };
   const facts = collectFacts(report, graph);
   if (facts.length === 0) return { skipped: "no evidence to explain." };
   console.error(`[rune] sending ${facts.length} evidence snippet(s) (not your whole project) to ${provider.name} / ${provider.model}`);

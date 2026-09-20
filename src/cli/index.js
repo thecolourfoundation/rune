@@ -18,7 +18,7 @@ Rune — the Software Intelligence Runtime
 
 Usage:
   rune "<question>"   Ask Rune about this project (scans on first use)
-  ... --explain       Add a written explanation from your own AI model (needs an API key)
+  ... --evidence-only  Skip your AI model; print the evidence alone
   rune init [dir]     Set up Rune in the current (or given) project
   rune scan [dir]     Build (or rebuild) the understanding graph, once
   rune watch [dir]    Keep the understanding graph current as files change
@@ -614,10 +614,10 @@ async function cmdExperienceList(rest) {
 }
 
 async function cmdAgent(rest) {
-  const explain = rest.includes("--explain");
-  const args = rest.filter((a) => a !== "--explain");
+  const evidenceOnly = rest.includes("--evidence-only");
+  const args = rest.filter((a) => a !== "--explain" && a !== "--evidence-only");
   await cmdAgentBase(args);
-  if (!explain) return;
+  if (evidenceOnly) return;
   const { positional } = parseFlags(args);
   const objective = positional[0];
   if (!objective) return;
@@ -626,6 +626,17 @@ async function cmdAgent(rest) {
   if (!graph) return;
   const { explainReport } = await import("../llm/explain.js");
   const out = await explainReport(runAgentLoop(objective, dir), graph, process.env);
+  if (out.needsSetup) {
+    console.log("");
+    console.log("Rune is bring-your-own-model: an AI model you provide writes the explanation, and Rune checks every statement against the evidence above.");
+    console.log("No model is configured. Set one of:");
+    console.log("  Anthropic:  export ANTHROPIC_API_KEY=your-key");
+    console.log("  OpenAI:     export OPENAI_API_KEY=your-key RUNE_LLM_MODEL=model-name");
+    console.log("  Local:      export RUNE_LLM_BASE_URL=http://localhost:11434/v1 RUNE_LLM_MODEL=model-name   (Ollama, no key)");
+    console.log("Use --evidence-only to skip the model and print the evidence alone.");
+    process.exitCode = 2;
+    return;
+  }
   if (out.skipped) { console.log(`\nExplanation skipped: ${out.skipped}`); return; }
   if (out.error) { console.log(`\nExplanation unavailable: ${out.error}`); return; }
   const byId = new Map(out.facts.map((f) => [f.id, f]));

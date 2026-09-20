@@ -50,10 +50,21 @@ test("no key configured: skipped, nothing sent", async () => {
   assert.equal(called, false);
 });
 
-test("CLI --explain without a key prints a skip note", () => {
+test("CLI with no model configured prints evidence, then setup help, exit 2", () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "rune-explain-"));
   fs.mkdirSync(path.join(dir, "lib"));
   fs.writeFileSync(path.join(dir, "lib", "app.js"), "const Router = require('router');\nmodule.exports = Router;\n");
   const r = spawnSync(process.execPath, [BIN, "how does routing work", dir, "--explain"], { encoding: "utf8", env: { PATH: process.env.PATH } });
-  assert.match(r.stdout, /Explanation skipped/);
+  assert.match(r.stdout, /bring-your-own-model/);
+  assert.equal(r.status, 2);
+});
+
+test("CLI --evidence-only prints evidence and exits 0 with no model", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "rune-evidence-only-"));
+  fs.mkdirSync(path.join(dir, "lib"));
+  fs.writeFileSync(path.join(dir, "lib", "app.js"), "const Router = require('router');\nmodule.exports = Router;\n");
+  const r = spawnSync(process.execPath, [BIN, "how does routing work", dir, "--evidence-only"], { encoding: "utf8", env: { PATH: process.env.PATH } });
+  assert.equal(r.status, 0);
+  assert.match(r.stdout, /Rune Agent/);
+  assert.doesNotMatch(r.stdout, /bring-your-own-model/);
 });
