@@ -9,7 +9,7 @@ npx -y esbuild bin/rune.js --bundle --platform=node --format=cjs \
   --define:__RUNE_VERSION__="\"$VERSION\"" \
   --banner:js="const __importMetaUrl=require('url').pathToFileURL(process.execPath).href;" \
   --outfile=build/rune.cjs
-sed '1{/^#!/d}' build/rune.cjs > build/rune.main.cjs
+awk 'NR==1 && /^#!/ {next} {print}' build/rune.cjs > build/rune.main.cjs
 echo '{"main":"build/rune.main.cjs","output":"build/sea.blob","disableExperimentalSEAWarning":true}' > build/sea.json
 node --experimental-sea-config build/sea.json
 cp "$(command -v node)" "$OUT"
