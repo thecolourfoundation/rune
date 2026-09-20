@@ -644,6 +644,10 @@ async function cmdAgent(rest) {
   }
 
   const graphForExplain = readGraph(dir);
+  const wanted = report.intent?.outputConstraints?.exactCount;
+  if (wanted && report.synthesis.insights.length < wanted) {
+    console.log(`Note: you asked for ${wanted}, but only ${report.synthesis.insights.length} distinct areas were found in production code.\n`);
+  }
   console.log(`${report.synthesis.insights.length} insight(s):\n`);
   for (const insight of report.synthesis.insights) {
     console.log(`${insight.rank}. ${insight.insight}`);

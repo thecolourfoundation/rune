@@ -1,6 +1,6 @@
 {
   "name": "@moosl/rune",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "The Software Intelligence Runtime — persistent, explainable software understanding for any AI.",
   "type": "module",
   "bin": {

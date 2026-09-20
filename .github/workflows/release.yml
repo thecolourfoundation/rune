@@ -1,0 +1,56 @@
+name: Release
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-latest,  asset: rune-linux-x64 }
+          - { os: macos-latest,   asset: rune-macos-arm64 }
+          - { os: windows-latest, asset: rune-windows-x64.exe }
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm ci
+      - name: Tests
+        if: runner.os == 'Linux'
+        run: npm test
+      - name: Build binary
+        shell: bash
+        run: scripts/build-binary.sh "dist/${{ matrix.asset }}"
+      - name: Check binary version matches package.json
+        shell: bash
+        run: |
+          V=$(node -p "require('./package.json').version")
+          "dist/${{ matrix.asset }}" --version | grep -q "$V"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.asset }}
+          path: dist/${{ matrix.asset }}
+
+  release:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Checksums and release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cd dist
+          sha256sum rune-* > SHA256SUMS
+          gh release create "$GITHUB_REF_NAME" rune-* SHA256SUMS --repo "$GITHUB_REPOSITORY" --generate-notes
