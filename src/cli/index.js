@@ -18,6 +18,7 @@ Rune — the Software Intelligence Runtime
 
 Usage:
   rune "<question>"   Ask Rune about this project (scans on first use)
+  ... --explain       Add a written explanation from your own AI model (needs an API key)
   rune init [dir]     Set up Rune in the current (or given) project
   rune scan [dir]     Build (or rebuild) the understanding graph, once
   rune watch [dir]    Keep the understanding graph current as files change
@@ -613,6 +614,31 @@ async function cmdExperienceList(rest) {
 }
 
 async function cmdAgent(rest) {
+  const explain = rest.includes("--explain");
+  const args = rest.filter((a) => a !== "--explain");
+  await cmdAgentBase(args);
+  if (!explain) return;
+  const { positional } = parseFlags(args);
+  const objective = positional[0];
+  if (!objective) return;
+  const dir = positional[1] ? path.resolve(positional[1]) : process.cwd();
+  const graph = readGraph(dir);
+  if (!graph) return;
+  const { explainReport } = await import("../llm/explain.js");
+  const out = await explainReport(runAgentLoop(objective, dir), graph, process.env);
+  if (out.skipped) { console.log(`\nExplanation skipped: ${out.skipped}`); return; }
+  if (out.error) { console.log(`\nExplanation unavailable: ${out.error}`); return; }
+  const byId = new Map(out.facts.map((f) => [f.id, f]));
+  console.log(`Explanation (written by ${out.provider} / ${out.model}; every statement checked against cited evidence)\n`);
+  if (out.kept.length === 0) console.log("  The model produced no statements that could be verified against the evidence.");
+  for (const s of out.kept) {
+    const where = s.cites.map((id) => { const f = byId.get(id); return f ? `${f.file}:${f.line ?? "?"}` : id; }).join(", ");
+    console.log(`  - ${s.text}  [${where}]`);
+  }
+  if (out.dropped.length > 0) console.log(`\n  (${out.dropped.length} statement(s) dropped: not backed by the retrieved evidence)`);
+}
+
+async function cmdAgentBase(rest) {
   const { flags, positional } = parseFlags(rest);
   const objective = positional[0];
   const dir = positional[1] ? path.resolve(positional[1]) : process.cwd();
