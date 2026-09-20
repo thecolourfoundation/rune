@@ -9,7 +9,7 @@ import { fileURLToPath } from "node:url";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const runeBin = path.join(__dirname, "..", "bin", "rune.js");
 
-test("`rune serve` prints the RUNE banner before starting the MCP server", () => {
+test("`rune serve` prints the RUNE banner on stderr, keeping stdout clean for MCP", () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "rune-banner-test-"));
   fs.writeFileSync(path.join(dir, "app.js"), `export function greet() {\n  return "hi";\n}\n`);
 
@@ -23,7 +23,8 @@ test("`rune serve` prints the RUNE banner before starting the MCP server", () =>
   });
 
   const output = (result.stdout || "") + (result.stderr || "");
-  assert.match(output, /RUNE/);
+  assert.match(result.stderr || "", /RUNE/);
+  assert.equal(result.stdout || "", "", "stdout must stay clean for MCP");
 });
 
 test("`rune watch` prints the RUNE banner before entering watch mode", () => {

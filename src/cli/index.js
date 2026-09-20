@@ -309,6 +309,8 @@ async function cmdWatch(rest) {
 }
 
 async function cmdServe(rest) {
+  // MCP speaks JSON-RPC on stdout; nothing else may ever write there.
+  console.log = console.info = (...args) => console.error(...args);
   const dir = resolveDir(rest);
   assertDirExists(dir);
 
@@ -318,7 +320,7 @@ async function cmdServe(rest) {
     writeGraph(dir, buildGraph(dir));
   }
 
-  await printStartupBanner(`serving ${dir}`);
+  console.error(`RUNE  serving ${dir}`);
 
   try {
     const { startServer } = await import("../mcp/server.js");
