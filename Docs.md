@@ -1,3 +1,5 @@
+> **Note:** Rune is installed from the prebuilt binary (see the README), not from npm. Any `npm` or `npx` commands below refer to the old package and are out of date.
+
 Rune — Full Documentation
 This covers everything trimmed from the main README for newcomers: how it actually works, the full CLI, every MCP tool, current limitations, and security notes.
 How it works

@@ -1,40 +1,64 @@
 # Rune
 
-Most tools scan your codebase once, hand your AI a snapshot, and go stale the moment you save a file. Rune doesn't scan — it runs. Always on, always watching, always up to date.
-
-That's the difference between a photo and a live feed. Your AI isn't looking at what your code used to be five minutes ago — it's looking at what it is right now.
-
-**Rune is a runtime, not a tool you run.** Start it once, and it keeps a living, evidence-backed understanding of your codebase current in the background — for every AI tool you connect, for as long as it's running.
+Ask questions about a codebase. Rune finds the evidence, your own AI model explains it, and every statement is checked against the code before you see it.
 
 ## Install
 
-```
-npm install -g @pypl100/rune
-```
+Linux (x64) and macOS (Apple Silicon):
 
-## Quickstart
+    curl -fsSL https://raw.githubusercontent.com/thecolourfoundation/rune/main/install.sh | sh
 
-```
-cd your-project
-rune init
-rune watch &
-rune serve
-```
+Windows: download `rune-windows-x64.exe` from the [latest release](https://github.com/thecolourfoundation/rune/releases/latest) and run it from a terminal.
 
-Connect your AI tool (Claude Code, Cursor, etc.) to the running `rune serve` process. It now knows your codebase instead of guessing at it — live, not from a snapshot.
+The installer verifies a SHA-256 checksum and puts `rune` in `~/.local/bin`.
 
-## Why it matters
+## Use
 
-- **Always current, never stale.** `rune watch` updates its understanding the moment you save — no re-scanning, no manual refresh.
-- **Trust the answer, don't just hope.** Every claim points to a real file and line — run `rune explain <id>` and see the proof.
-- **Verify before you rely on it.** `rune verify` re-checks every stored fact against the code right now and reports what's changed — the same check any connected AI can run itself via `rune_check_drift` or `rune_verify_fact`.
-- **Catch it before it ships.** Leaked secrets, unsafe scripts, and typosquatted dependencies get flagged automatically.
-- **Ask it, don't just query it.** `rune agent "why is auth failing"` investigates — forms ranked hypotheses backed by live evidence, not a single guess. Exposed as `rune_agent` over MCP too, so any connected AI can delegate the investigation instead of doing it blind.
-- **It can look, but it can't touch.** Rune only reads and reports. It never writes to your code — so it's never the thing that silently breaks something.
+    cd your-project
+    rune "how does routing work"
 
-## Docs
+The first run scans the project (a few seconds). Rune prints ranked findings with file:line evidence, then your model writes a short explanation from that evidence. Any statement that cites evidence Rune didn't retrieve, or quotes text that isn't there, is dropped and counted.
 
-Full setup, CLI reference, and current limitations: [docs](https://github.com/thecolourfoundation/rune/blob/main/DOCS.md)
+`rune explain <id>` shows the evidence trail behind any fact, and `rune verify` checks the stored understanding against the code as it is now.
+
+## Bring your own model
+
+Rune has no model of its own. Point it at yours with environment variables:
+
+    # Anthropic (early support)
+    export ANTHROPIC_API_KEY=your-key
+
+    # OpenAI or any OpenAI-compatible API
+    export OPENAI_API_KEY=your-key
+    export RUNE_LLM_MODEL=model-name
+
+    # Local model with Ollama (no key, nothing leaves your machine)
+    export RUNE_LLM_BASE_URL=http://localhost:11434/v1
+    export RUNE_LLM_MODEL=model-name
+
+If no model is configured, Rune prints the evidence, then setup help, and exits with code 2. Add `--evidence-only` to skip the model entirely. Set `RUNE_LLM_DEBUG=1` to see the model's raw reply and why any statement was dropped.
+
+## What leaves your machine
+
+Only the evidence for your question goes to the model provider you configured: up to 40 short code snippets, never the whole project. Rune prints how many it is sending before it sends them. Use `--evidence-only`, or a local model, to send nothing.
+
+## Use it from an AI client (MCP)
+
+Rune is an MCP server. Point any MCP client at it:
+
+    {"command": "rune", "args": ["serve", "/absolute/path/to/your-project"]}
+
+The client gets tools such as `rune_agent`, `rune_search`, `rune_explain`, `rune_verify_fact` and `rune_check_drift`, with file, line and snippet citations. No key is needed here: the client's own model is the model.
+
+## Good to know
+
+- Rune is read-only. It observes and reports; it never modifies your project.
+- Best on JavaScript/TypeScript, shell, Lua, and config files. Other languages get thinner results for now.
+- Explanation quality depends on your model. Small local models write plain, short explanations.
+- Rune saves its scan in `.rune/` inside your project. Add `.rune/` to your `.gitignore`.
+- Binaries are unsigned, so macOS or Windows may show a security warning. There is no prebuilt binary yet for Intel Macs or Linux on ARM.
+
+Run `rune --help` for all commands. More detail: [Docs.md](Docs.md).
 
 ## License
 
