@@ -35,13 +35,24 @@ export function parseStatements(text) {
 
 // The verification rule: a statement survives only if everything it cites was
 // really retrieved, and any quote it gives really appears in the cited evidence.
+// Models spell citation fields many ways. Be tolerant about the FORMAT here;
+// verifyStatements below stays strict about whether the cited facts are real.
+function normalizeCites(s) {
+  const raw = s?.cites ?? s?.cite ?? s?.citations ?? s?.citation ?? s?.evidence ?? s?.ids ?? [];
+  const list = Array.isArray(raw) ? raw : [raw];
+  return list
+    .flatMap((c) => String(c).split(/[\s,;]+/))
+    .map((c) => c.replace(/^[\[\]"'`]+|[\[\]"'`]+$/g, ""))
+    .filter(Boolean);
+}
+
 export function verifyStatements(statements, facts) {
   const byId = new Map(facts.map((f) => [f.id, f]));
   const kept = [];
   const dropped = [];
   for (const s of statements) {
     const text = typeof s?.text === "string" ? s.text.trim() : "";
-    const cites = Array.isArray(s?.cites) ? s.cites.filter((c) => typeof c === "string") : [];
+    const cites = normalizeCites(s);
     if (!text) { dropped.push({ reason: "empty statement" }); continue; }
     if (cites.length === 0) { dropped.push({ reason: "no citation", text }); continue; }
     const unknown = cites.filter((c) => !byId.has(c));
@@ -68,8 +79,19 @@ export async function explainReport(report, graph, env = process.env, fetchImpl 
   if (facts.length === 0) return { skipped: "no evidence to explain." };
   console.error(`[rune] sending ${facts.length} evidence snippet(s) (not your whole project) to ${provider.name} / ${provider.model}`);
   try {
-    const text = await callModel(provider, SYSTEM, buildPrompt(report, facts), fetchImpl);
-    const { kept, dropped } = verifyStatements(parseStatements(text), facts);
+    let text = await callModel(provider, SYSTEM, buildPrompt(report, facts), fetchImpl);
+    if (env.RUNE_LLM_DEBUG) console.error("[rune] raw model output:\n" + text);
+    let statements;
+    try {
+      statements = parseStatements(text);
+    } catch {
+      // Small models often ignore the format once; ask again, more strictly.
+      text = await callModel(provider, SYSTEM, buildPrompt(report, facts) + "\n\nReply with ONLY the JSON object, starting with { and nothing else.", fetchImpl);
+      if (env.RUNE_LLM_DEBUG) console.error("[rune] raw model output (retry):\n" + text);
+      statements = parseStatements(text);
+    }
+    const { kept, dropped } = verifyStatements(statements, facts);
+    if (env.RUNE_LLM_DEBUG) for (const d of dropped) console.error("[rune] dropped: " + d.reason + (d.text ? " - " + d.text : ""));
     return { provider: provider.name, model: provider.model, kept, dropped, facts };
   } catch (err) {
     return { error: String(err?.message || err) };

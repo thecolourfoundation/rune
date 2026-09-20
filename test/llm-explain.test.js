@@ -68,3 +68,27 @@ test("CLI --evidence-only prints evidence and exits 0 with no model", () => {
   assert.match(r.stdout, /Rune Agent/);
   assert.doesNotMatch(r.stdout, /bring-your-own-model/);
 });
+
+test("retries once when the model ignores the JSON format", async () => {
+  let calls = 0;
+  const flaky = async () => {
+    calls++;
+    const text = calls === 1 ? "Sure! Here is an explanation." : JSON.stringify({ statements: [{ text: "Routing is delegated to router.", cites: ["import_1"] }] });
+    return { ok: true, json: async () => ({ content: [{ type: "text", text }] }) };
+  };
+  const out = await explainReport(report, graph, { ANTHROPIC_API_KEY: "k" }, flaky);
+  assert.equal(calls, 2);
+  assert.equal(out.kept.length, 1);
+});
+
+test("accepts common citation formats but still rejects unknown ids", async () => {
+  const out = await explainReport(report, graph, { ANTHROPIC_API_KEY: "k" }, fakeFetch([
+    { text: "String form.", cite: "import_1" },
+    { text: "Array under another name.", citations: ["import_1"] },
+    { text: "Bracketed string.", cites: "[import_1]" },
+    { text: "Made-up id.", cite: "import_999" },
+    { text: "No citation at all." },
+  ]));
+  assert.equal(out.kept.length, 3);
+  assert.equal(out.dropped.length, 2);
+});
