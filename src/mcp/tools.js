@@ -216,8 +216,30 @@ export function buildTools(getGraph, rootDir) {
       },
       handler: async ({ objective, maxTokens }) => {
         const report = runAgentLoop(objective, rootDir);
+        await attachCitations(report, rootDir);
         return budgetReport(report, maxTokens ? { maxTokens } : undefined);
       },
     },
   ];
+}
+
+// Resolve evidence IDs to file:line + snippet so MCP clients get citations in
+// one call. Best-effort: the raw evidenceRefs are always still returned.
+async function attachCitations(report, dir) {
+  try {
+    const { readGraph } = await import("../graph/build.js");
+    const graph = readGraph(dir);
+    if (!graph) return;
+    const byId = new Map(graph.facts.map((f) => [f.id, f]));
+    for (const insight of report.synthesis?.insights || []) {
+      insight.evidence = (insight.evidenceRefs || []).map((id) => {
+        const f = byId.get(id);
+        if (!f) return { id };
+        const snippet = typeof f.evidence === "string" ? f.evidence.trim().slice(0, 160) : undefined;
+        return { id, file: f.file, line: f.line ?? null, snippet };
+      });
+    }
+  } catch {
+    // leave the report as-is
+  }
 }
