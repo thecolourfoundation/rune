@@ -33,6 +33,14 @@ function describeEvidence(facts) {
   const usable = (facts || []).filter(Boolean);
   if (usable.length === 0) return null;
 
+  const passages = usable.filter((f) => /^text_/.test(String(f.type)));
+  if (passages.length > 0) {
+    const first = passages.find((f) => f.type === "text_paragraph") || passages[0];
+    const where = first.section ? first.section + ", " : "";
+    const quote = String((first.type === "text_paragraph" ? first.name : first.evidence) || first.name || "").replace(/\s+/g, " ").trim().slice(0, 140);
+    return `Matching passage in this document (${where}line ${first.line}): "${quote}"${passages.length > 1 ? ` (+${passages.length - 1} more)` : ""}.`;
+  }
+
   const routes = usable.filter((f) => /route/.test(String(f.type)) && (f.routePath || f.route));
   if (routes.length > 0) {
     const shown = routes.slice(0, 3).map((f) => `${f.method ? f.method + " " : ""}${f.routePath || f.route}`);

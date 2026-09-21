@@ -22,7 +22,7 @@ function tmpProject(files) {
 }
 
 test("without a registered extractor a .txt file is not scanned", () => {
-  const graph = buildGraph(tmpProject({ "a.txt": "Hello\n" }));
+  const graph = buildGraph(tmpProject({ "a.xyz": "Hello\n" }));
   assert.equal(graph.facts.length, 0);
   assert.equal(graph.meta.status, "no_supported_files");
 });

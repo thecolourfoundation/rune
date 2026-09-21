@@ -22,6 +22,7 @@ import { extractShellFacts } from "./shell.js";
 import { extractConfigFacts } from "./config.js";
 import { extractMarkdownFacts } from "./markdown.js";
 import { extractLuaFacts } from "./lua.js";
+import { extractTextFacts } from "./text.js";
 import { extractNextRoutes } from "./nextjs.js";
 import { extractVueComponents } from "./vue.js";
 
@@ -38,6 +39,7 @@ const EXTRACTORS = [
   { name: "config", bucket: "configFiles", kind: "facts", extract: extractConfigFacts },
   { name: "markdown", bucket: "markdownFiles", kind: "facts", extract: extractMarkdownFacts },
   { name: "lua", bucket: "luaFiles", kind: "facts", extract: extractLuaFacts },
+  { name: "text", bucket: "textFiles", kind: "facts", extensions: [".txt"], extract: extractTextFacts },
 ];
 
 // Project-level extractors look at the whole project, not one file: extract(rootDir, nextId).
