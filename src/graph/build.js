@@ -1,18 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { walkSourceFiles, readFileSafe, detectProjectKind } from "../scanner/walk.js";
-import { extractFileFacts } from "../scanner/facts.js";
-import { extractExpressRoutes } from "../scanner/express.js";
-import { extractNextRoutes } from "../scanner/nextjs.js";
-import { extractVueComponents } from "../scanner/vue.js";
-import { extractShellFacts } from "../scanner/shell.js";
-import { extractConfigFacts } from "../scanner/config.js";
-import { extractMarkdownFacts } from "../scanner/markdown.js";
-import { extractLuaFacts } from "../scanner/lua.js";
-import { extractSecretFindings } from "../scanner/secrets.js";
-import { extractShellExecFindings } from "../scanner/shellexec.js";
-import { extractWorkflowFindings } from "../scanner/workflow.js";
-import { extractDependencyFindings } from "../scanner/depcheck.js";
+import { listBuckets, extractorsForBucket, PROJECT_EXTRACTORS } from "../scanner/registry.js";
 import { deriveUnderstanding } from "./derive.js";
 import { createIdGenerator } from "../scanner/id.js";
 import { normalizeFacts } from "../scanner/fact-schema.js";
@@ -57,7 +46,8 @@ export function buildGraph(rootDir, options = {}) {
 
   const config = readConfig(rootDir);
   const projectInfo = detectProjectKind(rootDir);
-  const { files, shellFiles, configFiles, markdownFiles, luaFiles, stats: walkStats } = walkSourceFiles(rootDir, { ignore: config.ignore });
+  const walked = walkSourceFiles(rootDir, { ignore: config.ignore });
+  const walkStats = walked.stats;
   const nextId = createIdGenerator();
 
   const facts = [];
@@ -67,46 +57,15 @@ export function buildGraph(rootDir, options = {}) {
   let timedOut = false;
   let filesActuallyScanned = 0;
 
-  for (const filePath of files) {
-    if (maxScanMs !== null && Date.now() - scanStart > maxScanMs) {
-      timedOut = true;
-      break;
-    }
+  const outputs = { facts, findings: rawSecurityFindings };
 
-    const relPath = path.relative(rootDir, filePath);
-    const content = readFileSafe(filePath);
-    if (content == null) {
-      // A file readdirSync reported as present but that couldn't actually
-      // be read (permissions, race with a delete, etc.) is a real scan
-      // gap, not a silent no-op -- record it the same way a parse failure
-      // is recorded, so coverage numbers stay honest about what actually
-      // got analyzed.
-      scanWarnings.push({ file: relPath, error: "file could not be read" });
-      continue;
-    }
-
-    try {
-      facts.push(...extractFileFacts(filePath, content, rootDir, nextId));
-      facts.push(...extractExpressRoutes(filePath, content, rootDir, nextId));
-      rawSecurityFindings.push(...extractSecretFindings(filePath, content, rootDir, nextId));
-      rawSecurityFindings.push(...extractShellExecFindings(filePath, content, rootDir, nextId));
-      rawSecurityFindings.push(...extractWorkflowFindings(filePath, content, rootDir, nextId));
-      rawSecurityFindings.push(...extractDependencyFindings(filePath, content, rootDir, nextId));
-    } catch (err) {
-      scanWarnings.push({ file: relPath, error: err.message });
-    }
-
-    filesActuallyScanned += 1;
-    if (onProgress && filesActuallyScanned % 200 === 0) {
-      onProgress({ scanned: filesActuallyScanned, total: files.length });
-    }
-  }
-
-  // Shell and config files use their own extractors (not JS/TS-aware),
-  // so they run in a separate loop with the same timeout/read-failure/
-  // scanWarnings handling as the main loop above.
-  if (!timedOut) {
-    for (const filePath of shellFiles) {
+  // Every bucket of files is handled by the extractors registered for it (see
+  // src/scanner/registry.js), in registration order, sharing one id generator.
+  for (const bucket of listBuckets()) {
+    if (timedOut) break;
+    const bucketFiles = walked[bucket] || [];
+    const extractors = extractorsForBucket(bucket);
+    for (const filePath of bucketFiles) {
       if (maxScanMs !== null && Date.now() - scanStart > maxScanMs) {
         timedOut = true;
         break;
@@ -118,61 +77,25 @@ export function buildGraph(rootDir, options = {}) {
         continue;
       }
       try {
-        facts.push(...extractShellFacts(filePath, content, rootDir, nextId));
+        for (const extractor of extractors) {
+          outputs[extractor.kind].push(...extractor.extract(filePath, content, rootDir, nextId));
+        }
       } catch (err) {
         scanWarnings.push({ file: relPath, error: err.message });
       }
       filesActuallyScanned += 1;
-    }
-  }
-
-  if (!timedOut) {
-    for (const filePath of configFiles) {
-      if (maxScanMs !== null && Date.now() - scanStart > maxScanMs) {
-        timedOut = true;
-        break;
+      if (onProgress && bucket === "files" && filesActuallyScanned % 200 === 0) {
+        onProgress({ scanned: filesActuallyScanned, total: bucketFiles.length });
       }
-      const relPath = path.relative(rootDir, filePath);
-      const content = readFileSafe(filePath);
-      if (content == null) {
-        scanWarnings.push({ file: relPath, error: "file could not be read" });
-        continue;
-      }
-      try {
-        facts.push(...extractConfigFacts(filePath, content, rootDir, nextId));
-      } catch (err) {
-        scanWarnings.push({ file: relPath, error: err.message });
-      }
-      filesActuallyScanned += 1;
     }
   }
 
   if (!timedOut) {
-    for (const filePath of markdownFiles) {
-      if (maxScanMs !== null && Date.now() - scanStart > maxScanMs) { timedOut = true; break; }
-      const relPath = path.relative(rootDir, filePath);
-      const content = readFileSafe(filePath);
-      if (content == null) { scanWarnings.push({ file: relPath, error: "file could not be read" }); continue; }
-      try { facts.push(...extractMarkdownFacts(filePath, content, rootDir, nextId)); } catch (err) { scanWarnings.push({ file: relPath, error: err.message }); }
-      filesActuallyScanned += 1;
+    for (const extractor of PROJECT_EXTRACTORS) {
+      outputs[extractor.kind].push(...extractor.extract(rootDir, nextId));
     }
   }
 
-  if (!timedOut) {
-    for (const filePath of luaFiles) {
-      if (maxScanMs !== null && Date.now() - scanStart > maxScanMs) { timedOut = true; break; }
-      const relPath = path.relative(rootDir, filePath);
-      const content = readFileSafe(filePath);
-      if (content == null) { scanWarnings.push({ file: relPath, error: "file could not be read" }); continue; }
-      try { facts.push(...extractLuaFacts(filePath, content, rootDir, nextId)); } catch (err) { scanWarnings.push({ file: relPath, error: err.message }); }
-      filesActuallyScanned += 1;
-    }
-  }
-
-  if (!timedOut) {
-    facts.push(...extractNextRoutes(rootDir, nextId));
-    facts.push(...extractVueComponents(rootDir, nextId));
-  }
   const normalizedFacts = normalizeFacts(facts);
 
   const securityFindings = deduplicateFindings(rawSecurityFindings);
