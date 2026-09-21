@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { walkSourceFiles, readFileSafe, detectProjectKind } from "../scanner/walk.js";
-import { listBuckets, extractorsForBucket, PROJECT_EXTRACTORS } from "../scanner/registry.js";
+import { listBuckets, extractorsForBucket, extensionBuckets, PROJECT_EXTRACTORS } from "../scanner/registry.js";
 import { deriveUnderstanding } from "./derive.js";
 import { createIdGenerator } from "../scanner/id.js";
 import { normalizeFacts } from "../scanner/fact-schema.js";
@@ -46,7 +46,7 @@ export function buildGraph(rootDir, options = {}) {
 
   const config = readConfig(rootDir);
   const projectInfo = detectProjectKind(rootDir);
-  const walked = walkSourceFiles(rootDir, { ignore: config.ignore });
+  const walked = walkSourceFiles(rootDir, { ignore: config.ignore, extraExtensions: extensionBuckets() });
   const walkStats = walked.stats;
   const nextId = createIdGenerator();
 

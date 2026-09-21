@@ -23,6 +23,12 @@ const CONFIG_FILENAME_EXCLUDES = new Set(["package.json", "package-lock.json", "
 const MARKDOWN_EXTENSIONS = new Set([".md", ".mdx"]);
 const LUA_EXTENSIONS = new Set([".lua"]);
 
+// Every extension the built-in buckets handle. Extractors registered through the
+// registry cannot claim these.
+export const BUILTIN_EXTENSIONS = new Set([
+  ...CODE_EXTENSIONS, ...SHELL_EXTENSIONS, ...CONFIG_EXTENSIONS, ...MARKDOWN_EXTENSIONS, ...LUA_EXTENSIONS,
+]);
+
 /**
  * Recursively walks a directory, returning absolute paths of source files
  * AND coverage stats about what was seen along the way.
@@ -47,6 +53,9 @@ export function walkSourceFiles(rootDir, opts = {}) {
   const configFiles = [];
   const markdownFiles = [];
   const luaFiles = [];
+  // Extensions claimed by registered extractors (opts.extraExtensions: { ".txt": "textFiles" }).
+  const extra = opts.extraExtensions || {};
+  const extraBuckets = {};
   const stats = {
     filesDiscovered: 0,
     filesSupported: 0,
@@ -91,6 +100,10 @@ export function walkSourceFiles(rootDir, opts = {}) {
         } else if (LUA_EXTENSIONS.has(ext)) {
           luaFiles.push(full);
           stats.filesSupported += 1;
+        } else if (extra[ext.toLowerCase()]) {
+          const bucket = extra[ext.toLowerCase()];
+          (extraBuckets[bucket] = extraBuckets[bucket] || []).push(full);
+          stats.filesSupported += 1;
         } else {
           stats.filesSkippedUnsupportedExtension += 1;
         }
@@ -99,7 +112,7 @@ export function walkSourceFiles(rootDir, opts = {}) {
   }
 
   walk(rootDir);
-  return { files: results, shellFiles, configFiles, markdownFiles, luaFiles, stats };
+  return { files: results, shellFiles, configFiles, markdownFiles, luaFiles, ...extraBuckets, stats };
 }
 
 export function readFileSafe(filePath) {
