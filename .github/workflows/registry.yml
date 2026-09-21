@@ -1,0 +1,44 @@
+name: Registry
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to publish, e.g. v0.5.1"
+        required: true
+  workflow_call:
+    inputs:
+      tag:
+        type: string
+        required: true
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Fetch the bundles from the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag }}
+        run: |
+          mkdir -p dist
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --pattern 'rune-mcp-*.mcpb' --dir dist
+          ls -l dist
+      - name: Generate server.json
+        env:
+          TAG: ${{ inputs.tag }}
+        run: |
+          node scripts/make-server-json.mjs "${TAG#v}" dist
+          cat server.json
+      - name: Publish to the MCP Registry
+        run: |
+          curl -fsSL "https://github.com/modelcontextprotocol/registry/releases/latest/download/mcp-publisher_linux_amd64.tar.gz" | tar xz mcp-publisher
+          ./mcp-publisher --version || true
+          ./mcp-publisher login github-oidc
+          ./mcp-publisher publish
