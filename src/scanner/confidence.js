@@ -1,11 +1,8 @@
-// Shared confidence scoring for extracted facts. A fact inside a test,
-// spec, or fixture file is still a real match in that file, but it is not
-// necessarily reflective of production code -- e.g. a "component" defined
-// inside a snapshot fixture, or a helper only ever called from a test
-// double. Downstream consumers (security findings already carry a
-// confidence field for the same reason) can use this to weight a fact
-// rather than discard it outright.
-const LOW_CONFIDENCE_DIR_RE = /(^|[\\/])(tests?|__tests__|__mocks__|mocks|fixtures?|spec)([\\/]|$)/i;
+// FIXED (#21): __fixtures__ (a dunder-wrapped segment, same pattern as
+// __tests__/__mocks__ which WERE already covered) was missing from the
+// low-confidence path regex despite "fixture" being named explicitly in
+// this file's own doc comment as one of the three cases this exists for.
+const LOW_CONFIDENCE_DIR_RE = /(^|[\\/])(tests?|__tests__|__mocks__|__fixtures__|mocks|fixtures?|spec)([\\/]|$)/i;
 const LOW_CONFIDENCE_FILE_RE = /\.(test|spec)\.[^./\\]+$/i;
 
 export function confidenceForFile(relPath) {

@@ -18,7 +18,7 @@ export const BUILTIN_EXTENSIONS = new Set([
   ...CODE_EXTENSIONS, ...SHELL_EXTENSIONS, ...CONFIG_EXTENSIONS, ...MARKDOWN_EXTENSIONS, ...LUA_EXTENSIONS,
 ]);
 
-function buildIgnoreMatcher(patterns) {
+export function buildIgnoreMatcher(patterns) {
   const exact = new Set();
   const pathPrefixes = [];
   const globRes = [];
@@ -141,4 +141,20 @@ export function detectProjectKind(rootDir) {
   const hasExpress = Boolean(deps.express);
   const hasReact = Boolean(deps.react);
   return { pkg, deps, hasNext, hasExpress, hasReact };
+}
+
+// FIXED (#30/#37): vue.js, nextjs.js, and watch/index.js each did their own
+// separate directory walk with a hardcoded skip list, never consulting the
+// user's .rune/config.json ignore patterns the way the main scanner loop
+// does. This shared helper lets all of them read the same config the same
+// way, so a user-configured ignore actually applies everywhere.
+export function readIgnorePatterns(rootDir) {
+  const configPath = path.join(rootDir, ".rune", "config.json");
+  if (!fs.existsSync(configPath)) return [];
+  try {
+    const parsed = JSON.parse(fs.readFileSync(configPath, "utf8"));
+    return Array.isArray(parsed.ignore) ? parsed.ignore : [];
+  } catch {
+    return [];
+  }
 }
