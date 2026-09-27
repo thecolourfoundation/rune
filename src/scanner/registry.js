@@ -24,25 +24,38 @@ import { extractMarkdownFacts } from "./markdown.js";
 import { extractLuaFacts } from "./lua.js";
 import { extractNextRoutes } from "./nextjs.js";
 import { extractVueComponents } from "./vue.js";
+// Science + math extractors
+import { extractNotebookFacts } from "./notebook.js";
+import { extractPythonFacts } from "./python.js";
+import { extractLatexFacts } from "./latex.js";
+import { extractLeanFacts } from "./lean.js";
+import { extractRFacts } from "./r.js";
 
 const BUILTIN_BUCKETS = new Set(["files", "shellFiles", "configFiles", "markdownFiles", "luaFiles"]);
 
 const EXTRACTORS = [
-  { name: "file-facts", bucket: "files", kind: "facts", extract: extractFileFacts },
-  { name: "express-routes", bucket: "files", kind: "facts", extract: extractExpressRoutes },
-  { name: "secrets", bucket: "files", kind: "findings", extract: extractSecretFindings },
-  { name: "shell-exec", bucket: "files", kind: "findings", extract: extractShellExecFindings },
-  { name: "workflow", bucket: "files", kind: "findings", extract: extractWorkflowFindings },
-  { name: "dependencies", bucket: "files", kind: "findings", extract: extractDependencyFindings },
-  { name: "shell", bucket: "shellFiles", kind: "facts", extract: extractShellFacts },
-  { name: "config", bucket: "configFiles", kind: "facts", extract: extractConfigFacts },
-  { name: "markdown", bucket: "markdownFiles", kind: "facts", extract: extractMarkdownFacts },
-  { name: "lua", bucket: "luaFiles", kind: "facts", extract: extractLuaFacts },
+  // ── SWE (existing) ──
+  { name: "file-facts",   bucket: "files",         kind: "facts",    extract: extractFileFacts },
+  { name: "express-routes", bucket: "files",        kind: "facts",    extract: extractExpressRoutes },
+  { name: "secrets",      bucket: "files",          kind: "findings", extract: extractSecretFindings },
+  { name: "shell-exec",   bucket: "files",          kind: "findings", extract: extractShellExecFindings },
+  { name: "workflow",     bucket: "files",          kind: "findings", extract: extractWorkflowFindings },
+  { name: "dependencies", bucket: "files",          kind: "findings", extract: extractDependencyFindings },
+  { name: "shell",        bucket: "shellFiles",     kind: "facts",    extract: extractShellFacts },
+  { name: "config",       bucket: "configFiles",    kind: "facts",    extract: extractConfigFacts },
+  { name: "markdown",     bucket: "markdownFiles",  kind: "facts",    extract: extractMarkdownFacts },
+  { name: "lua",          bucket: "luaFiles",       kind: "facts",    extract: extractLuaFacts },
+  // ── Science + math (new) ──
+  { name: "notebook",     bucket: "notebookFiles",  kind: "facts",    extract: extractNotebookFacts, extensions: [".ipynb"] },
+  { name: "python",       bucket: "pythonFiles",    kind: "facts",    extract: extractPythonFacts,   extensions: [".py"] },
+  { name: "latex",        bucket: "latexFiles",     kind: "facts",    extract: extractLatexFacts,    extensions: [".tex", ".bib"] },
+  { name: "lean",         bucket: "leanFiles",      kind: "facts",    extract: extractLeanFacts,     extensions: [".lean"] },
+  { name: "r-lang",       bucket: "rFiles",         kind: "facts",    extract: extractRFacts,        extensions: [".r", ".rmd"] },
 ];
 
 // Project-level extractors look at the whole project, not one file: extract(rootDir, nextId).
 export const PROJECT_EXTRACTORS = [
-  { name: "next-routes", kind: "facts", extract: (rootDir, nextId) => extractNextRoutes(rootDir, nextId) },
+  { name: "next-routes",    kind: "facts", extract: (rootDir, nextId) => extractNextRoutes(rootDir, nextId) },
   { name: "vue-components", kind: "facts", extract: (rootDir, nextId) => extractVueComponents(rootDir, nextId) },
 ];
 
@@ -86,14 +99,12 @@ export function listExtractors() {
   return EXTRACTORS.map(({ name, bucket, kind }) => ({ name, bucket, kind }));
 }
 
-// Map of file extension -> bucket for extractors that claim their own extensions.
 export function extensionBuckets() {
   const map = {};
   for (const e of EXTRACTORS) for (const x of normalizeExtensions(e)) map[x] = e.bucket;
   return map;
 }
 
-// Adds an extractor; returns a function that removes it again.
 export function registerExtractor(e) {
   validateExtractor(e);
   if (EXTRACTORS.some((x) => x.name === e.name)) throw new Error(`extractor "${e.name}" is already registered`);
