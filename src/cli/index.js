@@ -620,10 +620,10 @@ async function cmdExperienceList(rest) {
 }
 
 async function cmdAgent(rest) {
-  const evidenceOnly = rest.includes("--evidence-only");
+  const explainRequested = rest.includes("--explain");
   const args = rest.filter((a) => a !== "--explain" && a !== "--evidence-only");
   await cmdAgentBase(args);
-  if (evidenceOnly) return;
+  if (!explainRequested) return;
   const { positional } = parseFlags(args);
   const objective = positional[0];
   if (!objective) return;

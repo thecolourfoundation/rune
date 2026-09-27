@@ -66,7 +66,7 @@ export function buildTools(getGraph, rootDir) {
         const graph = getGraph();
         const q = query.toLowerCase();
         const matchFacts = graph.facts.filter((f) =>
-          [f.name, f.file, f.routePath, f.target].some((v) => typeof v === "string" && v.toLowerCase().includes(q))
+          [f.name, f.file, f.routePath, f.target, f.callee, f.caller].some((v) => typeof v === "string" && v.toLowerCase().includes(q))
         );
         return { matches: matchFacts.slice(0, 50), totalMatches: matchFacts.length };
       },
@@ -216,7 +216,12 @@ export function buildTools(getGraph, rootDir) {
       },
       handler: async ({ objective, maxTokens }) => {
         const report = runAgentLoop(objective, rootDir);
-        await attachCitations(report, rootDir);
+        // Reuse the same cached graph every other tool in this file uses,
+        // instead of attachCitations doing its own separate disk read --
+        // avoids a second readGraph() call and the risk of it returning a
+        // different graph version than the one runAgentLoop just used.
+        const graph = getGraph();
+        attachCitations(report, graph);
         return budgetReport(report, maxTokens ? { maxTokens } : undefined);
       },
     },
@@ -225,11 +230,11 @@ export function buildTools(getGraph, rootDir) {
 
 // Resolve evidence IDs to file:line + snippet so MCP clients get citations in
 // one call. Best-effort: the raw evidenceRefs are always still returned.
-async function attachCitations(report, dir) {
+// FIXED (#32): now takes the already-loaded graph instead of re-reading it
+// from disk -- see the rune_agent handler above for why.
+function attachCitations(report, graph) {
+  if (!graph) return;
   try {
-    const { readGraph } = await import("../graph/build.js");
-    const graph = readGraph(dir);
-    if (!graph) return;
     const byId = new Map(graph.facts.map((f) => [f.id, f]));
     for (const insight of report.synthesis?.insights || []) {
       insight.evidence = (insight.evidenceRefs || []).map((id) => {

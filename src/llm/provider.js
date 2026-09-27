@@ -1,13 +1,24 @@
 // Bring-your-own-key model access. Plain fetch, no SDKs. Nothing is sent
-// anywhere unless the user opts in with --explain AND has configured a key.
+// anywhere unless the user explicitly passes --explain AND has configured
+// a key. (Previously this comment was aspirational, not actual: cmdAgent
+// ran this path by default and only --evidence-only opted OUT. Fixed in
+// cli/index.js so --explain is now the real, required opt-in this comment
+// always described.)
 const ANTHROPIC_DEFAULT_MODEL = "claude-haiku-4-5-20251001";
 
 export function resolveProvider(env = process.env) {
   const explicit = (env.RUNE_LLM_PROVIDER || "").toLowerCase();
   let kind = null;
   if (explicit === "anthropic" || explicit === "openai") kind = explicit;
+  // RUNE_LLM_BASE_URL is checked BEFORE ANTHROPIC_API_KEY: setting a base
+  // URL is a deliberate, explicit choice (e.g. a local Ollama endpoint
+  // chosen specifically to keep code from leaving the machine), whereas an
+  // ambient ANTHROPIC_API_KEY may just be sitting in the environment for
+  // an unrelated tool. An explicit choice should not be silently
+  // overridden by an incidental one.
+  else if (env.RUNE_LLM_BASE_URL) kind = "openai";
   else if (env.ANTHROPIC_API_KEY) kind = "anthropic";
-  else if (env.RUNE_LLM_BASE_URL || env.OPENAI_API_KEY) kind = "openai";
+  else if (env.OPENAI_API_KEY) kind = "openai";
   if (!kind) return null;
 
   if (kind === "anthropic") {
