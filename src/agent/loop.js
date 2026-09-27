@@ -1,14 +1,8 @@
 import { confidenceForFile } from "../scanner/confidence.js";
-// Shell/Lua/config scanners don't set fact.confidence, so also judge by path.
 function isLowConfidence(f) {
   return f.confidence === "low" || confidenceForFile(String(f.file || "")) === "low";
 }
 
-/**
- * The Rune Agent core loop: PERCEIVE -> UNDERSTAND -> RETRIEVE ->
- * IDENTIFY UNKNOWNS -> FORM HYPOTHESES -> GATHER EVIDENCE -> REASON ->
- * PLAN -> ACT -> OBSERVE -> VERIFY -> LEARN.
- */
 import { buildGraph, readGraph } from "../graph/build.js";
 import { verifyFacts } from "../graph/verify.js";
 import { computeImpact } from "../graph/impact.js";
@@ -39,16 +33,12 @@ function filterDiscriminatingKeywords(graph, keywords) {
   return [scored[0].kw];
 }
 
-// No named entity + architecture-overview: use the whole graph minus
-// call-graph noise (function_call) and low-confidence (test/fixture) facts.
 function retrieveOverviewFacts(graph) {
   const base = graph.facts.filter((f) => f.type !== "function_call" && !String(f.type).startsWith("doc_") && !isLowConfidence(f));
   const code = base.filter((f) => f.type !== "config_key");
   return code.length >= 20 ? code : base;
 }
 
-// Light morphology: "routing" also finds route/router, "handling" finds handle/handler.
-// No bare-stem variant ("rout" would match "routine"); stems under 4 chars are skipped.
 function expandKeyword(kw) {
   const out = new Set([kw]);
   const ing = kw.match(/^(.{4,})ing$/);
@@ -59,8 +49,7 @@ function expandKeyword(kw) {
 
 const SECONDARY_PATH_RE = /(^|[\\/])(examples?|samples?|demos?|benchmarks?)([\\/]|$)/i;
 const SECONDARY_KEYWORD_RE = /^(tests?|specs?|fixtures?|mocks?|examples?|samples?|demos?|benchmarks?)/i;
-// Prefer production code: test/fixture/example facts only fill in when
-// production matches are scarce, or when the question is about them.
+
 function retrieveRelevantFacts(graph, keywords) {
   const all = retrieveRelevantFactsRaw(graph, keywords);
   if (keywords.some((k) => SECONDARY_KEYWORD_RE.test(k))) return all;
@@ -70,10 +59,15 @@ function retrieveRelevantFacts(graph, keywords) {
   return primary.length > 0 ? primary : all;
 }
 
+// FIXED (#31, partial fix landing here): function_call facts have no
+// name/target field (only caller/callee), so keyword search previously
+// couldn't find them via rune_search's [name,file,routePath,target] check
+// OR via this same haystack pattern here. Adding callee/caller so the
+// agent's own retrieval doesn't have the same blind spot MCP's search does.
 function retrieveRelevantFactsRaw(graph, keywords) {
   if (keywords.length === 0) return [];
   return graph.facts.filter((fact) => {
-    const haystack = [fact.file, fact.name, fact.target, fact.type]
+    const haystack = [fact.file, fact.name, fact.target, fact.type, fact.callee, fact.caller]
       .filter(Boolean)
       .join(" ")
       .toLowerCase();
@@ -81,12 +75,16 @@ function retrieveRelevantFactsRaw(graph, keywords) {
   });
 }
 
+// FIXED (#4): file is now set explicitly on the hypothesis object instead
+// of only being embedded in the description string for synthesize.js to
+// regex back out later.
 function formHypotheses(intent, relevantFacts) {
   const files = [...new Set(relevantFacts.map((f) => f.file).filter(Boolean))];
   return files.map((file) => {
     const factIds = relevantFacts.filter((f) => f.file === file).map((f) => f.id);
     return createHypothesis(`${intent.taskType.replace(/-/g, " ")}: ${file}`, {
       relatedFactIds: factIds,
+      file,
     });
   });
 }
@@ -126,7 +124,12 @@ export function runAgentLoop(objective, rootDir, options = {}) {
     keywords.some((kw) => (m.rule || "").toLowerCase().includes(kw))
   );
 
-  const unknowns = keywords.filter(
+  // FIXED (#2): unknowns is now computed against keywords2 (the actual
+  // post-filter retrieval keywords), not the original pre-filter keywords.
+  // Previously a keyword filtered out by filterDiscriminatingKeywords for
+  // being TOO COMMON (opposite of unknown) could still be reported as
+  // "unknown" if it didn't happen to appear in the narrower relevantFacts.
+  const unknowns = keywords2.filter(
     (kw) =>
       !relevantFacts.some(
         (f) => (f.file || "").toLowerCase().includes(kw) || (f.name || "").toLowerCase().includes(kw)
@@ -139,12 +142,22 @@ export function runAgentLoop(objective, rootDir, options = {}) {
   const synthesis = synthesize(ranked, intent.outputConstraints, new Map((graph.facts || []).map((f) => [f.id, f])));
 
   const outcome = ranked.length > 0 && ranked[0].confidence >= 0.5 ? "success" : "failure";
-  addExperience(rootDir, {
-    taskDescription: objective,
-    strategyUsed: "keyword-retrieval + impact + verify",
-    outcome,
-    evidenceSource: ranked[0]?.id ?? "no-hypothesis-formed",
-  });
+
+  // FIXED (#35, the loop.js side): addExperience() now only fires when the
+  // caller opts in via options.recordExperience -- previously this fired
+  // unconditionally on every call, which combined with cli/index.js calling
+  // runAgentLoop() twice per invocation (once for the plain report, again
+  // for the LLM-explain pass) meant every real CLI invocation silently
+  // double-logged into the experience history. The CLI now passes
+  // recordExperience: true exactly once, on whichever call actually runs.
+  if (options.recordExperience) {
+    addExperience(rootDir, {
+      taskDescription: objective,
+      strategyUsed: "keyword-retrieval + impact + verify",
+      outcome,
+      evidenceSource: ranked[0]?.id ?? "no-hypothesis-formed",
+    });
+  }
 
   return {
     objective,

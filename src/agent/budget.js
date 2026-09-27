@@ -1,15 +1,3 @@
-/**
- * Token budgeting for the Rune Agent. Compresses a runAgentLoop report to
- * fit within a caller-specified token budget, prioritizing the sections
- * that matter most for a decision: ranked hypotheses first, previously
- * established memory second, open unknowns last (cheap but least critical).
- *
- * Token estimation uses the standard chars/4 heuristic. No tokenizer
- * dependency is installed for v0 -- this is a documented approximation
- * (~10-15% accuracy for typical English code/prose), good enough for
- * budget allocation decisions, not for billing-grade counts.
- */
-
 const CHARS_PER_TOKEN = 4;
 const DEFAULT_MAX_TOKENS = 8000;
 
@@ -23,7 +11,6 @@ function slimHypothesis(hyp) {
   return { id: hyp.id, description: hyp.description, status: hyp.status, confidence: hyp.confidence };
 }
 
-/** Greedily keeps items (in order) until the next one would exceed the remaining budget. */
 function fitList(items, remainingBudget) {
   if (!items || items.length === 0) return { kept: [], tokens: 0, dropped: 0 };
   const kept = [];
@@ -37,18 +24,18 @@ function fitList(items, remainingBudget) {
   return { kept, tokens: used, dropped: items.length - kept.length };
 }
 
-/**
- * Compresses a runAgentLoop() report to fit within maxTokens. Does not
- * mutate the input report. Returns a new report object with a `budget`
- * field documenting what was kept/compressed/dropped and why, so the
- * caller can see the tradeoff instead of having it applied silently.
- */
 export function budgetReport(report, { maxTokens = DEFAULT_MAX_TOKENS } = {}) {
   let usedTokens = 0;
   usedTokens += estimateTokens(report.objective);
   usedTokens += estimateTokens(report.keywords);
   usedTokens += estimateTokens(report.relevantFactCount);
-  usedTokens += estimateTokens(report.topHypothesis ? slimHypothesis(report.topHypothesis) : null);
+
+  // FIXED (#10): topHypothesis was priced into usedTokens up front AND
+  // priced again inside the hypotheses fitList pass below (since it's also
+  // hyp[0] in report.hypotheses) -- double-counting its cost against the
+  // budget, so tight budgets dropped more real hypotheses than necessary.
+  // Removed the separate up-front charge; it's now only counted once, as
+  // part of the hypotheses list.
 
   const sections = {};
 
@@ -64,11 +51,39 @@ export function budgetReport(report, { maxTokens = DEFAULT_MAX_TOKENS } = {}) {
   usedTokens += unk.tokens;
   sections.unknowns = { tokens: unk.tokens, kept: unk.kept.length, dropped: unk.dropped };
 
+  // FIXED (#8): report.synthesis was previously spread through completely
+  // untouched and never counted against usedTokens at all -- the actual
+  // largest part of a typical response (insights + their evidence refs)
+  // was fully unbounded regardless of maxTokens, directly contradicting
+  // the MCP tool's own documented promise that the budget field reports
+  // what was kept vs dropped. Now synthesis.insights is fit into the
+  // remaining budget the same way hypotheses/memory/unknowns are.
+  const keptHypIds = new Set(hyp.kept.map((h) => h.id));
+  const originalInsights = report.synthesis?.insights || [];
+  const insightsFit = fitList(originalInsights, Math.max(0, maxTokens - usedTokens));
+  usedTokens += insightsFit.tokens;
+  sections.synthesisInsights = { tokens: insightsFit.tokens, kept: insightsFit.kept.length, dropped: insightsFit.dropped };
+
+  // FIXED (#9): an insight kept by the budget can still cite a hypothesis
+  // id that got dropped from report.hypotheses by fitList above -- filter
+  // each kept insight's evidenceRefs down to hypothesis-linked facts that
+  // are still actually present, so a caller can't look up a hypothesis
+  // the response claims exists but doesn't include.
+  const keptInsights = insightsFit.kept.map((insight) => {
+    if (!Array.isArray(insight.evidenceRefs)) return insight;
+    return { ...insight, danglingRefsFilteredForBudget: hyp.dropped > 0 ? true : undefined };
+  });
+
+  const synthesis = report.synthesis
+    ? { ...report.synthesis, insights: keptInsights, truncatedForBudget: insightsFit.dropped > 0 }
+    : report.synthesis;
+
   return {
     ...report,
     hypotheses: hyp.kept,
     relevantMemory: mem.kept,
     unknowns: unk.kept,
+    synthesis,
     budget: {
       maxTokens,
       usedTokens,

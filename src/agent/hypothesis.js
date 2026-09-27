@@ -1,23 +1,23 @@
-/**
- * Hypothesis engine: represents competing explanations the Rune Agent
- * investigates during an objective, and tracks how evidence shifts
- * confidence in each one.
- */
-
 let hypothesisCounter = 0;
 
 function nextHypothesisId() {
   hypothesisCounter += 1;
-  return `hyp_${Date.now().toString(36)}_${hypothesisCounter}`;
+  return `hyp_${hypothesisCounter}`;
 }
 
-export function createHypothesis(description, { relatedFactIds = [] } = {}) {
+export function createHypothesis(description, { relatedFactIds = [], file = null } = {}) {
   if (!description || typeof description !== "string") {
     throw new Error("createHypothesis requires a non-empty description string");
   }
   return {
     id: nextHypothesisId(),
     description,
+    // FIXED (#4): file is now an explicit field set by the caller instead
+    // of being regex-parsed back out of `description` by synthesize.js
+    // later. Same coupling class as a prior bug where the area-clustering
+    // regex broke after the description format changed -- an explicit
+    // field can't desync from itself.
+    file,
     status: "open",
     confidence: 0.3,
     relatedFactIds: [...relatedFactIds],

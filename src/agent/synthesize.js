@@ -1,12 +1,10 @@
-/**
- * Synthesis layer: clusters ranked hypotheses into concept-level insights
- * and enforces output constraints from the parsed intent.
- */
-
+// FIXED (#4): clusters on hyp.file directly (an explicit field set by
+// loop.js's formHypotheses) instead of regex-parsing it back out of the
+// description string, which could desync from the description format.
 function clusterByArea(hypotheses) {
   const clusters = new Map();
   for (const hyp of hypotheses) {
-    const area = (hyp.description.match(/:\s*(\S+)$/)?.[1] || "unknown").split("/").slice(0, 2).join("/");
+    const area = (hyp.file ? hyp.file.split("/").slice(0, 2).join("/") : "unknown");
     if (!clusters.has(area)) clusters.set(area, []);
     clusters.get(area).push(hyp);
   }
@@ -27,8 +25,6 @@ const AREA_DESCRIPTIONS = [
   { pattern: /^plans\//, insight: "Planning notes", why: "Forward-looking design notes, not shipped behavior — lower urgency than active code." },
 ];
 
-// Turns the facts behind an insight into a plain description. Returns null
-// when the facts don't support a specific statement (caller falls back).
 function describeEvidence(facts) {
   const usable = (facts || []).filter(Boolean);
   if (usable.length === 0) return null;
@@ -51,6 +47,28 @@ function describeEvidence(facts) {
     const internal = [...new Set(imports.map((f) => f.target))].slice(0, 3).map((t) => "`" + t + "`").join(", ");
     return `Imports local module ${internal}.`;
   }
+
+  // FIXED (#6, partial): a few more fact types now get a real description
+  // instead of always falling through to generic filler -- covers the
+  // shell/config/lua/markdown fact types added in later scanner sessions
+  // that previously had no describeEvidence case at all.
+  const shellFns = usable.filter((f) => f.type === "shell_function_def" || f.type === "lua_function_def");
+  if (shellFns.length > 0) {
+    const names = shellFns.slice(0, 3).map((f) => f.name).filter(Boolean);
+    return `Defines function(s): ${names.join(", ")}${shellFns.length > names.length ? "…" : ""}.`;
+  }
+
+  const configKeys = usable.filter((f) => f.type === "config_key");
+  if (configKeys.length > 0) {
+    const names = configKeys.slice(0, 4).map((f) => f.name).filter(Boolean);
+    return `Configuration key(s): ${names.join(", ")}.`;
+  }
+
+  const headings = usable.filter((f) => f.type === "doc_heading");
+  if (headings.length > 0) {
+    return `Documentation section: "${headings[0].name}".`;
+  }
+
   return null;
 }
 
@@ -63,7 +81,6 @@ function describeArea(area, factCount, evidenceFacts) {
   };
 }
 
-// Default when the objective asks for no specific count.
 const DEFAULT_MAX_INSIGHTS = 8;
 
 export function synthesize(rankedHypotheses, outputConstraints = {}, factsById = new Map()) {
@@ -77,10 +94,19 @@ export function synthesize(rankedHypotheses, outputConstraints = {}, factsById =
       merged.set(insight, { insight, whyItMatters, area: cluster.area, hypotheses: [], maxConfidence: 0 });
     }
     const entry = merged.get(insight);
+    // FIXED (#5): previously when two areas merged into one insight label,
+    // only the FIRST cluster's evidence facts survived (whyItMatters was
+    // never updated on subsequent merges) -- now we merge evidence refs
+    // from every contributing cluster too, not just the highest-confidence one.
     entry.hypotheses.push(...cluster.hypotheses);
     entry.maxConfidence = Math.max(entry.maxConfidence, cluster.maxConfidence);
   }
   let mergedClusters = [...merged.values()].sort((a, b) => b.maxConfidence - a.maxConfidence);
+
+  // FIXED (#1): totalClustersFound now captures the count BEFORE truncation,
+  // so a caller asking for "exactly 5" can still see how many were actually
+  // found rather than having that number silently truncated to match.
+  const totalClustersFound = mergedClusters.length;
 
   if (outputConstraints.exactCount) {
     mergedClusters = mergedClusters.slice(0, outputConstraints.exactCount);
@@ -91,6 +117,10 @@ export function synthesize(rankedHypotheses, outputConstraints = {}, factsById =
   const evidenceCap = outputConstraints.maxEvidenceRefs ?? 5;
 
   const insights = mergedClusters.map((cluster, i) => {
+    // FIXED (#5): evidenceRefs now draws from ALL hypotheses in the merged
+    // cluster (deduped), not just the single top-confidence one -- so a
+    // merged insight's evidence reflects every area that contributed to it.
+    const allFactIds = [...new Set(cluster.hypotheses.flatMap((h) => h.relatedFactIds))];
     const top = [...cluster.hypotheses].sort((a, b) => b.confidence - a.confidence)[0];
     return {
       rank: i + 1,
@@ -98,7 +128,7 @@ export function synthesize(rankedHypotheses, outputConstraints = {}, factsById =
       insight: cluster.insight,
       whyItMatters: cluster.whyItMatters,
       confidence: top.confidence,
-      evidenceRefs: top.relatedFactIds.slice(0, evidenceCap),
+      evidenceRefs: allFactIds.slice(0, evidenceCap),
       supportingHypotheses: cluster.hypotheses.length,
     };
   });
@@ -106,6 +136,6 @@ export function synthesize(rankedHypotheses, outputConstraints = {}, factsById =
   return {
     insights,
     constraintsApplied: { ...outputConstraints, maxEvidenceRefs: evidenceCap },
-    totalClustersFound: mergedClusters.length,
+    totalClustersFound,
   };
 }

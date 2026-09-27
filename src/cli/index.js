@@ -76,10 +76,16 @@ export async function runCli(args) {
     case "experience":
       return cmdExperience(rest);
     default:
-      if (command && command.includes(" ")) {
-      return cmdAgent([command, ...rest]);
-    }
-    console.log(`Unknown command: ${command}\n${HELP}`);
+      // FIXED (#34): previously only routed to the agent when the first
+      // arg contained a space, so a single-word objective like
+      // `rune "authentication"` fell through to "Unknown command" instead
+      // of being treated as an objective. Any arg that isn't a recognized
+      // subcommand and doesn't look like a flag is now treated as an
+      // objective, matching the documented `rune "<question>"` usage.
+      if (command && !command.startsWith("-")) {
+        return cmdAgent([command, ...rest]);
+      }
+      console.log(`Unknown command: ${command}\n${HELP}`);
       process.exitCode = 1;
   }
 }
@@ -662,7 +668,7 @@ async function cmdAgentBase(rest) {
     console.error("[rune] first run: scanning this project...");
     writeGraph(dir, buildGraph(dir));
   }
-  const report = runAgentLoop(objective, dir);
+  const report = runAgentLoop(objective, dir, { recordExperience: true });
 
   if (flags.debug !== undefined) {
     console.log(`\n[debug] intent:`, JSON.stringify(report.intent, null, 2));
