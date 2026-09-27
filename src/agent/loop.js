@@ -9,6 +9,7 @@ import { computeImpact } from "../graph/impact.js";
 import { listProjectMemory, addExperience } from "../memory/memory.js";
 import { parseIntent } from "./intent.js";
 import { synthesize } from "./synthesize.js";
+import { triage } from "./triage.js";
 import {
   createHypothesis,
   supportHypothesis,
@@ -59,11 +60,6 @@ function retrieveRelevantFacts(graph, keywords) {
   return primary.length > 0 ? primary : all;
 }
 
-// FIXED (#31, partial fix landing here): function_call facts have no
-// name/target field (only caller/callee), so keyword search previously
-// couldn't find them via rune_search's [name,file,routePath,target] check
-// OR via this same haystack pattern here. Adding callee/caller so the
-// agent's own retrieval doesn't have the same blind spot MCP's search does.
 function retrieveRelevantFactsRaw(graph, keywords) {
   if (keywords.length === 0) return [];
   return graph.facts.filter((fact) => {
@@ -75,9 +71,6 @@ function retrieveRelevantFactsRaw(graph, keywords) {
   });
 }
 
-// FIXED (#4): file is now set explicitly on the hypothesis object instead
-// of only being embedded in the description string for synthesize.js to
-// regex back out later.
 function formHypotheses(intent, relevantFacts) {
   const files = [...new Set(relevantFacts.map((f) => f.file).filter(Boolean))];
   return files.map((file) => {
@@ -124,11 +117,6 @@ export function runAgentLoop(objective, rootDir, options = {}) {
     keywords.some((kw) => (m.rule || "").toLowerCase().includes(kw))
   );
 
-  // FIXED (#2): unknowns is now computed against keywords2 (the actual
-  // post-filter retrieval keywords), not the original pre-filter keywords.
-  // Previously a keyword filtered out by filterDiscriminatingKeywords for
-  // being TOO COMMON (opposite of unknown) could still be reported as
-  // "unknown" if it didn't happen to appear in the narrower relevantFacts.
   const unknowns = keywords2.filter(
     (kw) =>
       !relevantFacts.some(
@@ -143,13 +131,19 @@ export function runAgentLoop(objective, rootDir, options = {}) {
 
   const outcome = ranked.length > 0 && ranked[0].confidence >= 0.5 ? "success" : "failure";
 
-  // FIXED (#35, the loop.js side): addExperience() now only fires when the
-  // caller opts in via options.recordExperience -- previously this fired
-  // unconditionally on every call, which combined with cli/index.js calling
-  // runAgentLoop() twice per invocation (once for the plain report, again
-  // for the LLM-explain pass) meant every real CLI invocation silently
-  // double-logged into the experience history. The CLI now passes
-  // recordExperience: true exactly once, on whichever call actually runs.
+  // Stage 1 -- Fast Triage. Pure/cheap, no LLM call. Decides whether the
+  // shallow pipeline above is enough or whether this objective should be
+  // escalated to Stage 2 (see widenForDeepInvestigation + investigateDeep
+  // in src/llm/investigate.js). Additive field only -- never changes any
+  // existing key on this return object.
+  const triageResult = triage({
+    intent,
+    hypotheses: ranked,
+    relevantMemory,
+    unknowns,
+    relevantFactCount: relevantFacts.length,
+  });
+
   if (options.recordExperience) {
     addExperience(rootDir, {
       taskDescription: objective,
@@ -169,5 +163,44 @@ export function runAgentLoop(objective, rootDir, options = {}) {
     unknowns,
     hypotheses: ranked,
     topHypothesis: ranked[0] ?? null,
+    triage: triageResult,
+  };
+}
+
+/**
+ * Stage 2's retrieval half. Re-runs retrieval with the net deliberately
+ * widened -- every exclusion retrieveRelevantFacts applies (low-confidence
+ * facts, test/fixture-path facts, doc facts) is lifted here, and the
+ * objective's unmatched terms (unknowns) are added as extra search terms
+ * in case a looser match finds something the stricter shallow pass
+ * didn't. Hypotheses are then re-formed and re-evidenced over that larger
+ * set. This is the concrete "fast stage controls retrieval for the deep
+ * stage" mechanism: investigateDeep never runs its own independent
+ * search, it only ever reasons over what this function assembled.
+ *
+ * Only ever called after triage.mode === "deep" (or an explicit force) --
+ * never as part of the normal runAgentLoop path, so ordinary callers that
+ * never touch the LLM see zero behavior change.
+ */
+export function widenForDeepInvestigation(report, rootDir, options = {}) {
+  const graph = readGraph(rootDir) ?? buildGraph(rootDir, options);
+  const widenedKeywords = [...new Set([...(report.keywords || []), ...(report.unknowns || [])])];
+  const widenedFacts = retrieveRelevantFactsRaw(graph, widenedKeywords);
+
+  const mergedFactIds = new Set([
+    ...report.hypotheses.flatMap((h) => h.relatedFactIds),
+    ...widenedFacts.map((f) => f.id),
+  ]);
+  const mergedFacts = graph.facts.filter((f) => mergedFactIds.has(f.id));
+
+  let hypotheses = formHypotheses(report.intent, mergedFacts);
+  hypotheses = gatherEvidenceAndReason(hypotheses, graph, rootDir);
+  const ranked = rankHypotheses(hypotheses);
+
+  return {
+    ...report,
+    hypotheses: ranked,
+    relevantFactCount: mergedFacts.length,
+    widenedForDeep: true,
   };
 }

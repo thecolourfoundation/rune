@@ -1,13 +1,9 @@
 import { z } from "zod";
-import { listProjectMemory, listExperience } from "../memory/memory.js";
+import { listProjectMemory, listExperience, addExperience } from "../memory/memory.js";
 import { verifyFact, verifyFacts } from "../graph/verify.js";
-import { runAgentLoop } from "../agent/loop.js";
+import { runAgentLoop, widenForDeepInvestigation } from "../agent/loop.js";
 import { budgetReport } from "../agent/budget.js";
-
-// NOTE: @modelcontextprotocol/sdk's McpServer.registerTool() requires Zod
-// schemas (a raw shape object of Zod types), not JSON Schema. An earlier
-// version of this file used JSON-Schema-shaped objects here, which the SDK
-// would have rejected at runtime.
+import { investigateDeep } from "../llm/investigate.js";
 
 const emptySchema = {};
 
@@ -209,29 +205,42 @@ export function buildTools(getGraph, rootDir) {
       name: "rune_agent",
       title: "Investigate an objective with the Rune Agent",
       description:
-        "Runs the Rune Agent's read-only investigation loop (retrieve relevant facts, form hypotheses per implicated file, gather evidence via live verification and impact analysis, rank by confidence) for a high-level objective like 'why is auth failing' or 'what does the scanner module depend on'. Returns ranked hypotheses with evidence and confidence, not a single guess. Does not modify any files -- read-only investigation only. Response is compressed to fit maxTokens (default 8000) using a chars/4 token estimate; the returned `budget` field reports what was kept vs dropped so you know if you should raise maxTokens or re-scan with a narrower objective.",
+        "Runs the Rune Agent's read-only investigation loop (retrieve relevant facts, form hypotheses per implicated file, gather evidence via live verification and impact analysis, rank by confidence) for a high-level objective like 'why is auth failing' or 'what does the scanner module depend on'. Returns ranked hypotheses with evidence and confidence, not a single guess. Every response includes a `triage` field showing whether fast (shallow) evidence was judged sufficient or the objective needed deep investigation, and why. Set `deep: true` to allow an LLM-driven deep-investigation pass (Stage 2) when triage decides it's needed -- this may call an AI model you've configured (ANTHROPIC_API_KEY / OPENAI_API_KEY / RUNE_LLM_BASE_URL) and costs more than the base call; set `force: true` alongside `deep` to run it even when triage decided shallow was enough. Does not modify any files -- read-only investigation only. Response is compressed to fit maxTokens (default 8000) using a chars/4 token estimate; the returned `budget` field reports what was kept vs dropped so you know if you should raise maxTokens or re-scan with a narrower objective.",
       inputSchema: {
         objective: z.string().min(1, "objective must not be empty").describe("A high-level question or goal, e.g. 'why is authentication failing' or 'what depends on the scanner module'"),
         maxTokens: z.number().int().positive().optional().describe("Token budget for the response (default 8000). Lower this to get a terser answer; raise it if hypotheses/evidence are being dropped."),
+        deep: z.boolean().optional().describe("Allow Stage 2 deep investigation (an LLM call) if fast triage decides the objective needs it. No model call happens if triage decides shallow is enough, unless force is also true."),
+        force: z.boolean().optional().describe("Force Stage 2 deep investigation even if fast triage decided shallow was enough. Has no effect unless deep is also true."),
       },
-      handler: async ({ objective, maxTokens }) => {
+      handler: async ({ objective, maxTokens, deep, force }) => {
         const report = runAgentLoop(objective, rootDir);
-        // Reuse the same cached graph every other tool in this file uses,
-        // instead of attachCitations doing its own separate disk read --
-        // avoids a second readGraph() call and the risk of it returning a
-        // different graph version than the one runAgentLoop just used.
         const graph = getGraph();
         attachCitations(report, graph);
+
+        if (deep) {
+          if (report.triage.mode === "deep" || force) {
+            const deepReport = widenForDeepInvestigation(report, rootDir);
+            const investigation = await investigateDeep(deepReport, graph, process.env);
+            report.deepInvestigation = investigation;
+            addExperience(rootDir, {
+              taskDescription: objective,
+              strategyUsed: "deep-investigation (llm, via mcp)",
+              outcome: investigation.kept?.length > 0 ? "success" : "failure",
+              evidenceSource: investigation.kept?.[0]?.cites?.[0] ?? "no-statement-kept",
+            });
+          } else {
+            report.deepInvestigation = {
+              skipped: "fast triage decided this objective doesn't need deep investigation; set force: true to run it anyway.",
+            };
+          }
+        }
+
         return budgetReport(report, maxTokens ? { maxTokens } : undefined);
       },
     },
   ];
 }
 
-// Resolve evidence IDs to file:line + snippet so MCP clients get citations in
-// one call. Best-effort: the raw evidenceRefs are always still returned.
-// FIXED (#32): now takes the already-loaded graph instead of re-reading it
-// from disk -- see the rune_agent handler above for why.
 function attachCitations(report, graph) {
   if (!graph) return;
   try {

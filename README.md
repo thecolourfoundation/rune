@@ -90,6 +90,8 @@ Rune is an MCP server. Point any MCP client at it:
 
 The client gets 13 tools, including `rune_agent`, `rune_search`, `rune_explain`, `rune_verify_fact`, `rune_check_drift`, `rune_list_routes` and `rune_get_security_findings`. Answers come back with file, line and snippet citations. No key is needed here, because the client's own model is the model.
 
+`rune_agent` always reports a fast, no-model `triage` verdict on whether shallow evidence was enough. Pass `deep: true` to let it run a deeper, LLM-driven investigation pass when triage decides the question needs it (or `force: true` to always run it) -- this is the one case where the tool may call a model you've configured, and its cost is counted against the response's token budget like everything else.
+
 Rune is listed in the official MCP Registry as `io.github.thecolourfoundation/rune`. Each release also includes `.mcpb` bundles for one-click install in Claude Desktop. They are new and haven't been tested inside Claude Desktop yet.
 
 ## What Rune understands
@@ -103,7 +105,8 @@ Rune is listed in the official MCP Registry as `io.github.thecolourfoundation/ru
 1. **Scan.** Rune parses your files into facts, each with a file, line, snippet and confidence.
 2. **Derive.** It builds conclusions from those facts, and each conclusion lists the fact ids it rests on.
 3. **Investigate.** For a question, it retrieves the relevant facts, forms hypotheses, checks them against the current files, and ranks them.
-4. **Explain, then verify.** Your model writes the explanation, and Rune checks each statement against the evidence.
+4. **Triage, then escalate if needed.** A fast, no-model check looks at the ranked hypotheses -- their confidence, whether they're too close to call, whether the question's own terms matched anything -- and decides if that's a good enough answer or if the question needs deeper reasoning. This step costs nothing and calls no model.
+5. **Explain, then verify.** Your model writes the explanation, and Rune checks each statement against the evidence. If triage flagged the question as needing it, an optional deeper investigation pass reasons across every hypothesis's evidence at once (still model-written, still fully cited, still verified the same way).
 
 `rune verify` re-reads the source and tells you which stored facts have drifted since the last scan.
 

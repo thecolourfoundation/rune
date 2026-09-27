@@ -78,12 +78,47 @@ export function budgetReport(report, { maxTokens = DEFAULT_MAX_TOKENS } = {}) {
     ? { ...report.synthesis, insights: keptInsights, truncatedForBudget: insightsFit.dropped > 0 }
     : report.synthesis;
 
+  // FIXED (known gap): deepInvestigation (Stage 2, when present) previously
+  // rode along completely unbudgeted -- its `facts` array in particular can
+  // be the single largest thing in the whole response (up to 60 evidence
+  // snippets). Fit it into whatever budget remains, same as every other
+  // section, so maxTokens is an honest ceiling on the full response.
+  let deepInvestigation = report.deepInvestigation;
+  if (deepInvestigation) {
+    if (deepInvestigation.skipped || deepInvestigation.error || deepInvestigation.needsSetup) {
+      const tokens = estimateTokens(deepInvestigation);
+      usedTokens += tokens;
+      sections.deepInvestigation = { tokens, kept: 1, dropped: 0 };
+    } else {
+      const statementsFit = fitList(deepInvestigation.kept || [], Math.max(0, maxTokens - usedTokens));
+      usedTokens += statementsFit.tokens;
+      const factsFit = fitList(deepInvestigation.facts || [], Math.max(0, maxTokens - usedTokens));
+      usedTokens += factsFit.tokens;
+      const uncertaintyTokens = estimateTokens(deepInvestigation.uncertainty);
+      usedTokens += uncertaintyTokens;
+      sections.deepInvestigation = {
+        tokens: statementsFit.tokens + factsFit.tokens + uncertaintyTokens,
+        kept: statementsFit.kept.length,
+        dropped: statementsFit.dropped,
+        factsKept: factsFit.kept.length,
+        factsDropped: factsFit.dropped,
+      };
+      deepInvestigation = {
+        ...deepInvestigation,
+        kept: statementsFit.kept,
+        facts: factsFit.kept,
+        truncatedForBudget: statementsFit.dropped > 0 || factsFit.dropped > 0,
+      };
+    }
+  }
+
   return {
     ...report,
     hypotheses: hyp.kept,
     relevantMemory: mem.kept,
     unknowns: unk.kept,
     synthesis,
+    ...(report.deepInvestigation ? { deepInvestigation } : {}),
     budget: {
       maxTokens,
       usedTokens,

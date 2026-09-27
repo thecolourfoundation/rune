@@ -2,7 +2,7 @@ import path from "node:path";
 import fs from "node:fs";
 import { buildGraph, writeGraph, readGraph, RUNE_DIR, GRAPH_FILENAME } from "../graph/build.js";
 import { verifyFacts } from "../graph/verify.js";
-import { runAgentLoop } from "../agent/loop.js";
+import { runAgentLoop, widenForDeepInvestigation } from "../agent/loop.js";
 import { getVersion } from "../version.js";
 import {
   addProjectMemory,
@@ -19,6 +19,8 @@ Rune — the Software Intelligence Runtime
 Usage:
   rune "<question>"   Ask Rune about this project (scans on first use)
   ... --evidence-only  Skip your AI model; print the evidence alone
+  ... --deep             Allow Stage 2 deep investigation (LLM) if fast triage says it is needed
+  ... --force-deep       Force Stage 2 deep investigation even if triage says shallow is enough
   rune init [dir]     Set up Rune in the current (or given) project
   rune scan [dir]     Build (or rebuild) the understanding graph, once
   rune watch [dir]    Keep the understanding graph current as files change
@@ -621,8 +623,13 @@ async function cmdExperienceList(rest) {
 
 async function cmdAgent(rest) {
   const explainRequested = rest.includes("--explain");
-  const args = rest.filter((a) => a !== "--explain" && a !== "--evidence-only");
+  const deepRequested = rest.includes("--deep");
+  const forceDeep = rest.includes("--force-deep");
+  const args = rest.filter((a) => !["--explain", "--evidence-only", "--deep", "--force-deep"].includes(a));
   await cmdAgentBase(args);
+  if (deepRequested) {
+    await cmdAgentDeep(args, forceDeep);
+  }
   if (!explainRequested) return;
   const { positional } = parseFlags(args);
   const objective = positional[0];
@@ -655,6 +662,57 @@ async function cmdAgent(rest) {
   if (out.dropped.length > 0) console.log(`\n  (${out.dropped.length} statement(s) dropped: not backed by the retrieved evidence)`);
 }
 
+async function cmdAgentDeep(args, force) {
+  const { positional } = parseFlags(args);
+  const objective = positional[0];
+  if (!objective) return;
+  const dir = positional[1] ? path.resolve(positional[1]) : process.cwd();
+  const graph = readGraph(dir);
+  if (!graph) return;
+
+  const report = runAgentLoop(objective, dir);
+  console.log(`\n[rune] fast triage: ${report.triage.mode}${report.triage.uncertain ? " (uncertain)" : ""}`);
+  for (const reason of report.triage.reasons) console.log(`[rune]   - ${reason}`);
+
+  if (report.triage.mode !== "deep" && !force) {
+    console.log(`[rune] fast triage decided shallow evidence above already answers this -- use --force-deep to investigate deeper anyway.`);
+    return;
+  }
+
+  const deepReport = widenForDeepInvestigation(report, dir);
+  const { investigateDeep } = await import("../llm/investigate.js");
+  const out = await investigateDeep(deepReport, graph, process.env);
+
+  if (out.needsSetup) {
+    console.log("");
+    console.log("Deep investigation needs an AI model, same as --explain. No model is configured. Set one of:");
+    console.log("  Anthropic:  export ANTHROPIC_API_KEY=your-key");
+    console.log("  OpenAI:     export OPENAI_API_KEY=your-key RUNE_LLM_MODEL=model-name");
+    console.log("  Local:      export RUNE_LLM_BASE_URL=http://localhost:11434/v1 RUNE_LLM_MODEL=model-name   (Ollama, no key)");
+    process.exitCode = 2;
+    return;
+  }
+  if (out.skipped) { console.log(`\nDeep investigation skipped: ${out.skipped}`); return; }
+  if (out.error) { console.log(`\nDeep investigation unavailable: ${out.error}`); return; }
+
+  const byId = new Map(out.facts.map((f) => [f.id, f]));
+  console.log(`\nDeep investigation (written by ${out.provider} / ${out.model}; every statement checked against cited evidence)\n`);
+  if (out.kept.length === 0) console.log("  The model produced no statements that could be verified against the evidence.");
+  for (const s of out.kept) {
+    const where = s.cites.map((id) => { const f = byId.get(id); return f ? `${f.file}:${f.line ?? "?"}` : id; }).join(", ");
+    console.log(`  - ${s.text}  [${where}]`);
+  }
+  if (out.dropped.length > 0) console.log(`\n  (${out.dropped.length} statement(s) dropped: not backed by the retrieved evidence)`);
+  if (out.uncertainty) console.log(`\n  Remaining uncertainty: ${out.uncertainty}`);
+
+  addExperience(dir, {
+    taskDescription: objective,
+    strategyUsed: "deep-investigation (llm)",
+    outcome: out.kept.length > 0 ? "success" : "failure",
+    evidenceSource: out.kept[0]?.cites?.[0] ?? "no-statement-kept",
+  });
+}
+
 async function cmdAgentBase(rest) {
   const { flags, positional } = parseFlags(rest);
   const objective = positional[0];
@@ -681,7 +739,12 @@ async function cmdAgentBase(rest) {
   console.log(`Task type: ${report.intent.taskType}`);
   console.log(`Target entities: ${report.intent.targetEntities.join(", ") || "none"}`);
   console.log(`Relevant facts: ${report.relevantFactCount}`);
-  console.log(`Unknowns: ${report.unknowns.join(", ") || "none"}\n`);
+  console.log(`Unknowns: ${report.unknowns.join(", ") || "none"}`);
+  console.log(`Fast triage: ${report.triage.mode}${report.triage.uncertain ? " (uncertain)" : ""}\n`);
+  if (flags.debug !== undefined) {
+    for (const reason of report.triage.reasons) console.log(`  - ${reason}`);
+    console.log(`[debug] triage signals:`, JSON.stringify(report.triage.signals, null, 2));
+  }
 
   if (report.synthesis.insights.length === 0) {
     console.log("No insights could be synthesized — objective's target entities matched nothing in the graph.");
