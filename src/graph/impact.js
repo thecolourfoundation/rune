@@ -4,8 +4,9 @@ const DEP_FIELD_BY_TYPE = { file_dependency: "dependsOn", shell_dependency: "dep
 
 function stripExt(p) { return p.replace(/\.[^/.]+$/, ""); }
 
-function resolveTarget(fromFile, target) {
-  if (!target.startsWith(".")) return target;
+function resolveTarget(fromFile, target, nodeType) {
+  if (nodeType === "file_dependency" && !target.startsWith(".")) return target;
+  if (path.isAbsolute(target)) return target;
   const dir = path.dirname(fromFile);
   return path.normalize(path.join(dir, target)).split(path.sep).join("/");
 }
@@ -18,7 +19,7 @@ export function computeImpact(graph, targetFile) {
     if (!field) continue;
     const targets = node[field] || [];
     for (const t of targets) {
-      const resolved = resolveTarget(node.file, t);
+      const resolved = resolveTarget(node.file, t, node.type);
       if (stripExt(resolved) === normalizedTarget || resolved === targetFile) {
         dependents.push({ file: node.file, via: node.type, rawTarget: t, basedOn: node.basedOn });
         break;

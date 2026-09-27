@@ -1,4 +1,3 @@
-
 import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
@@ -8,15 +7,16 @@ import { buildGraph } from "../src/graph/build.js";
 import { registerExtractor, extractorsForBucket, listExtractors, validateExtractor } from "../src/scanner/registry.js";
 
 test("built-in extractors keep the order that makes fact ids deterministic", () => {
-  assert.deepEqual(
-    extractorsForBucket("files").map((e) => e.name),
-    ["file-facts", "express-routes", "secrets", "shell-exec", "workflow", "dependencies"]
-  );
+  assert.deepEqual(extractorsForBucket("files").map((e) => e.name), ["file-facts", "express-routes", "shell-exec", "secrets-files"]);
+  assert.deepEqual(extractorsForBucket("shellFiles").map((e) => e.name), ["secrets-shell", "shell"]);
+  assert.deepEqual(extractorsForBucket("configFiles").map((e) => e.name), ["secrets-config", "workflow", "config"]);
+  assert.deepEqual(extractorsForBucket("markdownFiles").map((e) => e.name), ["secrets-markdown", "markdown"]);
+  assert.deepEqual(extractorsForBucket("envFiles").map((e) => e.name), ["secrets-env"]);
 });
 
 test("registered extractors satisfy the contract and names are unique", () => {
   const list = listExtractors();
-  for (const b of ["files", "shellFiles", "configFiles", "markdownFiles", "luaFiles"]) {
+  for (const b of ["files", "shellFiles", "configFiles", "markdownFiles", "luaFiles", "envFiles"]) {
     for (const e of extractorsForBucket(b)) validateExtractor(e);
   }
   assert.equal(new Set(list.map((e) => e.name)).size, list.length);

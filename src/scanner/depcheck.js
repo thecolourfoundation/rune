@@ -24,9 +24,7 @@ function findTyposquatMatch(depName) {
   for (const known of WELL_KNOWN_PACKAGES) {
     if (depName === known) continue;
     const dist = levenshtein(depName, known);
-    if (dist > 0 && dist <= 2 && known.length >= 4) {
-      return known;
-    }
+    if (dist > 0 && dist <= 2 && known.length >= 4) return known;
   }
   return null;
 }
@@ -44,10 +42,7 @@ export function extractDependencyFindings(filePath, content, rootDir, nextId) {
 
   const findings = [];
   const lines = content.split("\n");
-  const allDeps = {
-    ...(pkg.dependencies || {}),
-    ...(pkg.devDependencies || {}),
-  };
+  const allDeps = { ...(pkg.dependencies || {}), ...(pkg.devDependencies || {}) };
 
   for (const depName of Object.keys(allDeps)) {
     const typosquatTarget = findTyposquatMatch(depName);

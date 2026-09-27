@@ -2,7 +2,7 @@ import path from "node:path";
 
 const SECRET_PATTERNS = [
   { name: "AWS Access Key ID", re: /\bAKIA[0-9A-Z]{16}\b/g, severity: "high" },
-  { name: "AWS Secret Access Key (assignment)", re: /aws_secret_access_key\s*[:=]\s*['"][A-Za-z0-9/+=]{40}['"]/gi, severity: "high" },
+  { name: "AWS Secret Access Key (assignment)", re: /aws_secret_access_key\s*[:=]\s*['"]([A-Za-z0-9/+=]{40})['"]/gi, severity: "high", valueGroup: 1 },
   { name: "GitHub personal access token", re: /\bghp_[A-Za-z0-9]{36}\b/g, severity: "high" },
   { name: "GitHub OAuth token", re: /\bgho_[A-Za-z0-9]{36}\b/g, severity: "high" },
   { name: "GitHub fine-grained PAT", re: /\bgithub_pat_[A-Za-z0-9_]{22,}\b/g, severity: "high" },
@@ -13,16 +13,13 @@ const SECRET_PATTERNS = [
     name: "Hardcoded API key/secret (generic)",
     re: /\b(api[_-]?key|secret[_-]?key|access[_-]?token|auth[_-]?token)\s*[:=]\s*['"]([A-Za-z0-9_\-]{20,})['"]/gi,
     severity: "medium",
+    valueGroup: 2,
   },
 ];
 
 const PLACEHOLDER_DENYLIST = new Set([
-  "your-api-key-here",
-  "your_api_key_here",
-  "changeme",
-  "replace-me",
-  "xxxxxxxxxxxxxxxxxxxx",
-  "example-key-do-not-use",
+  "your-api-key-here", "your_api_key_here", "changeme", "replace-me",
+  "xxxxxxxxxxxxxxxxxxxx", "example-key-do-not-use",
 ]);
 
 const TEST_CONTEXT_PATH_SEGMENTS = new Set([
@@ -66,19 +63,8 @@ function looksLikeProse(lineText) {
   return words.length >= 6 && !/[:=]\s*['"`]/.test(lineText);
 }
 
-const SEVERITY_DOWNGRADE = {
-  critical: "medium",
-  high: "low",
-  medium: "low",
-  low: "low",
-};
-
-const PATTERN_DEFINITION_DOWNGRADE = {
-  critical: "low",
-  high: "low",
-  medium: "low",
-  low: "low",
-};
+const SEVERITY_DOWNGRADE = { critical: "medium", high: "low", medium: "low", low: "low" };
+const PATTERN_DEFINITION_DOWNGRADE = { critical: "low", high: "low", medium: "low", low: "low" };
 
 function evidenceAt(lines, ln, maxChars = 160) {
   const raw = lines[ln - 1]?.trim() || "";
@@ -114,7 +100,7 @@ export function extractSecretFindings(filePath, content, rootDir, nextId) {
     pattern.re.lastIndex = 0;
     let m;
     while ((m = pattern.re.exec(content))) {
-      const matchedValue = m[2] || m[0];
+      const matchedValue = pattern.valueGroup ? (m[pattern.valueGroup] ?? m[0]) : m[0];
       if (PLACEHOLDER_DENYLIST.has(matchedValue.toLowerCase())) continue;
 
       const ln = lineOf(m.index);
@@ -126,10 +112,7 @@ export function extractSecretFindings(filePath, content, rootDir, nextId) {
       const isProse = looksLikeProse(lineText);
       const isPatternDefinition = pathSuggestsPattern || isRegexLiteral || isProse;
 
-      let severity;
-      let confidence;
-      let context;
-
+      let severity, confidence, context;
       if (isPatternDefinition) {
         severity = PATTERN_DEFINITION_DOWNGRADE[pattern.severity];
         confidence = "low";

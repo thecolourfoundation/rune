@@ -29,9 +29,7 @@ function deduplicateFindings(findings) {
   const seen = new Map();
   for (const finding of findings) {
     const key = `${finding.category}|${finding.rule}|${finding.file}|${finding.line}`;
-    if (!seen.has(key)) {
-      seen.set(key, finding);
-    }
+    if (!seen.has(key)) seen.set(key, finding);
   }
   return Array.from(seen.values());
 }
@@ -56,11 +54,10 @@ export function buildGraph(rootDir, options = {}) {
   const scanStart = Date.now();
   let timedOut = false;
   let filesActuallyScanned = 0;
+  let filesProcessedThisRun = 0;
 
   const outputs = { facts, findings: rawSecurityFindings };
 
-  // Every bucket of files is handled by the extractors registered for it (see
-  // src/scanner/registry.js), in registration order, sharing one id generator.
   for (const bucket of listBuckets()) {
     if (timedOut) break;
     const bucketFiles = walked[bucket] || [];
@@ -74,30 +71,38 @@ export function buildGraph(rootDir, options = {}) {
       const content = readFileSafe(filePath);
       if (content == null) {
         scanWarnings.push({ file: relPath, error: "file could not be read" });
+        filesActuallyScanned += 1;
+        filesProcessedThisRun += 1;
         continue;
       }
-      try {
-        for (const extractor of extractors) {
+
+      for (const extractor of extractors) {
+        try {
           outputs[extractor.kind].push(...extractor.extract(filePath, content, rootDir, nextId));
+        } catch (err) {
+          scanWarnings.push({ file: relPath, extractor: extractor.name, error: err.message });
         }
-      } catch (err) {
-        scanWarnings.push({ file: relPath, error: err.message });
       }
+
       filesActuallyScanned += 1;
-      if (onProgress && bucket === "files" && filesActuallyScanned % 200 === 0) {
-        onProgress({ scanned: filesActuallyScanned, total: bucketFiles.length });
+      filesProcessedThisRun += 1;
+      if (onProgress && filesProcessedThisRun % 200 === 0) {
+        onProgress({ scanned: filesProcessedThisRun, total: walkStats.filesSupported });
       }
     }
   }
 
   if (!timedOut) {
     for (const extractor of PROJECT_EXTRACTORS) {
-      outputs[extractor.kind].push(...extractor.extract(rootDir, nextId));
+      try {
+        outputs[extractor.kind].push(...extractor.extract(rootDir, nextId));
+      } catch (err) {
+        scanWarnings.push({ file: "(project-level)", extractor: extractor.name, error: err.message });
+      }
     }
   }
 
   const normalizedFacts = normalizeFacts(facts);
-
   const securityFindings = deduplicateFindings(rawSecurityFindings);
 
   let status;
@@ -109,21 +114,16 @@ export function buildGraph(rootDir, options = {}) {
     status = "success";
   }
 
-  // Only suppress derived understanding when there was genuinely nothing
-  // supported to look at (status === "no_supported_files") -- NOT simply
-  // whenever fact extraction happened to yield zero facts. A real JS/TS
-  // project can legitimately have zero extractable facts (e.g. a file
-  // with no imports, components, or routes) while still having real,
-  // supported source code; that's a valid "success" scan and still
-  // deserves whatever derived summary deriveUnderstanding produces for an
-  // empty fact set, rather than being silently treated the same as a
-  // repo Rune couldn't analyze at all.
-  const derived = status === "no_supported_files" ? [] : deriveUnderstanding(normalizedFacts, projectInfo);
+  const derived = status === "no_supported_files"
+    ? []
+    : deriveUnderstanding(normalizedFacts, projectInfo, { scanIncomplete: status === "timeout" });
 
   const scanDurationMs = Date.now() - scanStart;
   const coveragePercent = walkStats.filesSupported > 0
     ? Math.round((filesActuallyScanned / walkStats.filesSupported) * 1000) / 10
     : null;
+
+  const filesFailedToParse = new Set(scanWarnings.map((w) => w.file)).size;
 
   const graph = {
     meta: {
@@ -132,13 +132,13 @@ export function buildGraph(rootDir, options = {}) {
       rootDir,
       fileCount: filesActuallyScanned,
       status,
-      filesFailedToParse: scanWarnings.length,
+      filesFailedToParse,
       coverage: {
         filesDiscovered: walkStats.filesDiscovered,
         filesSupported: walkStats.filesSupported,
         filesScanned: filesActuallyScanned,
         filesSkippedUnsupportedExtension: walkStats.filesSkippedUnsupportedExtension,
-        filesFailedToParse: scanWarnings.length,
+        filesFailedToParse,
         coveragePercent,
         scanDurationMs,
       },
@@ -191,14 +191,14 @@ export function createLiveGraphReader(rootDir) {
 
   return function getGraph() {
     const mtime = currentMtime();
-    const staleOrMissing = !cached || (mtime !== null && mtime !== cachedMtimeMs);
+    const staleOrMissing = !cached || mtime !== cachedMtimeMs;
 
     if (staleOrMissing) {
       const reread = readGraph(rootDir);
       if (reread) {
         cached = reread;
         cachedMtimeMs = mtime;
-      } else if (!cached) {
+      } else {
         cached = buildGraph(rootDir);
         writeGraph(rootDir, cached);
         cachedMtimeMs = currentMtime();

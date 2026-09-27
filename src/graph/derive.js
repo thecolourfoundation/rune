@@ -1,13 +1,18 @@
 import { createIdGenerator } from "../scanner/id.js";
 
-/**
- * Derived understanding is always computed FROM facts, and every derived node
- * records which fact ids it is based on (`basedOn`), so a conclusion can be
- * traced back to the evidence that produced it.
- */
-export function deriveUnderstanding(facts, projectInfo) {
+export function deriveUnderstanding(facts, projectInfo, { scanIncomplete = false } = {}) {
   const derived = [];
   const nextId = createIdGenerator();
+
+  if (scanIncomplete) {
+    derived.push({
+      id: nextId("derived"),
+      type: "scan_incomplete_notice",
+      description: "This scan hit its time budget before finishing. Everything below is based on a partial fact set and may be missing facts from files that weren't reached yet -- re-run with a longer --timeout for a complete picture.",
+      basedOn: [],
+      confidence: "high",
+    });
+  }
 
   const components = facts.filter((f) => f.type === "react_component");
   const expressRoutes = facts.filter((f) => f.type === "express_route");
@@ -17,12 +22,6 @@ export function deriveUnderstanding(facts, projectInfo) {
   const shellSources = facts.filter((f) => f.type === "shell_source");
   const docLinks = facts.filter((f) => f.type === "doc_link");
 
-  // --- Architecture summary ---
-  // A framework counts as "detected" if EITHER package.json declares it OR
-  // actual evidence of its use was found in the scanned source. Manifest-only
-  // detection silently misses real usage whenever a codebase imports/uses a
-  // framework without (or ahead of) declaring it as a direct dependency --
-  // common in monorepos, or when a manifest just lags behind the code.
   const hasNextEvidence = projectInfo.hasNext || nextPageRoutes.length > 0 || nextApiRoutes.length > 0;
   const hasExpressEvidence = projectInfo.hasExpress || expressRoutes.length > 0;
   const hasReactEvidence = projectInfo.hasReact || components.length > 0;
@@ -39,25 +38,25 @@ export function deriveUnderstanding(facts, projectInfo) {
     id: nextId("derived"),
     type: "architecture_summary",
     description:
-      frameworks.length > 0
+      (frameworks.length > 0
         ? `${namePrefix}Detected stack: ${frameworks.join(", ")}. ${components.length} React component(s), ` +
           `${expressRoutes.length} Express route(s), ${nextPageRoutes.length} Next.js page route(s), ` +
           `${nextApiRoutes.length} Next.js API route(s) across the scanned source tree.`
         : `${namePrefix}No first-class framework (React/Next.js/Express) confirmed from package.json. ` +
-          `${components.length} component-like function(s) detected heuristically.`,
+          `${components.length} component-like function(s) detected heuristically.`) +
+      (scanIncomplete ? " (Based on a partial, time-limited scan -- see scan_incomplete_notice.)" : ""),
     basedOn: [
       ...components.map((c) => c.id),
       ...expressRoutes.map((r) => r.id),
       ...nextPageRoutes.map((r) => r.id),
       ...nextApiRoutes.map((r) => r.id),
     ],
-    confidence: frameworks.length > 0 ? "high" : "medium",
+    confidence: scanIncomplete ? "low" : (frameworks.length > 0 ? "high" : "medium"),
   });
 
-  // --- File -> internal import graph (relationships) ---
   const importsByFile = new Map();
   for (const imp of imports) {
-    if (!imp.target.startsWith(".")) continue; // external package, skip for relationship graph
+    if (!imp.target.startsWith(".")) continue;
     if (!importsByFile.has(imp.file)) importsByFile.set(imp.file, []);
     importsByFile.get(imp.file).push(imp);
   }
@@ -72,7 +71,6 @@ export function deriveUnderstanding(facts, projectInfo) {
     });
   }
 
-  // --- API surface (unified view across Express + Next) ---
   const apiSurface = [
     ...expressRoutes.map((r) => ({ method: r.method, path: r.routePath, file: r.file, factId: r.id })),
     ...nextApiRoutes.map((r) => ({ method: "ANY", path: r.routePath, file: r.file, factId: r.id })),
@@ -88,7 +86,6 @@ export function deriveUnderstanding(facts, projectInfo) {
     });
   }
 
-  // --- Component index ---
   if (components.length > 0) {
     derived.push({
       id: nextId("derived"),
