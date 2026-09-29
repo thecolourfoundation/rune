@@ -29,3 +29,9 @@ test('same callee from a different caller is a distinct fact', () => {
   assert.equal(d.added.length, 1);
   assert.equal(d.removed.length, 1);
 });
+
+test('id-derived entity does not create phantom changes', () => {
+  const blk = (id, evidence) => ({ type: 'doc_code_block', file: 'D.md', line: 5, id, entity: id, evidence });
+  const d = computeDelta([blk('doc_codeblock_145', '```bash')], [blk('doc_codeblock_16l', '```bash')]);
+  assert.equal(d.added.length + d.removed.length, 0);
+});

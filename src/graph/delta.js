@@ -1,12 +1,13 @@
 // Content-keyed fact delta. Never matches by id (ids are per-scan)
 // or by line (lines shift on any edit above the fact).
 export function factKey(f) {
-  return [
-    f.type,
-    f.file,
-    f.entity ?? f.name ?? f.target ?? f.callee ?? f.routePath ?? '',
-    f.caller ?? '',
-  ].join('|');
+  // entity can fall back to the per-scan id for fact types with no
+  // name/target; never key on that, use the fact's own content instead.
+  const idLike = f.entity === undefined || f.entity === f.id;
+  const ident = idLike
+    ? (f.name ?? f.target ?? f.callee ?? f.routePath ?? f.evidence ?? '')
+    : f.entity;
+  return [f.type, f.file, ident, f.caller ?? ''].join('|');
 }
 
 // Adds an occurrence index so duplicates (e.g. two identical calls

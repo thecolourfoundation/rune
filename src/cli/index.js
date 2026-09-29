@@ -1,3 +1,4 @@
+import { cmdAfter } from "../verify/after-cmd.js";
 import path from "node:path";
 import fs from "node:fs";
 import { buildGraph, writeGraph, readGraph, RUNE_DIR, GRAPH_FILENAME } from "../graph/build.js";
@@ -71,6 +72,8 @@ export async function runCli(args) {
       return cmdServe(rest);
     case "explain":
       return cmdExplain(rest);
+    case "after":
+      return cmdAfter(rest);
     case "verify":
       return cmdVerify(rest);
     case "memory":
