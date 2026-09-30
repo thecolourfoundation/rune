@@ -228,7 +228,7 @@ export function buildTools(getGraph, rootDir) {
           }
           preds.push(...t.predicates);
         }
-        const r = await runAfter(rootDir, { base, predicates: preds });
+        const r = await runAfter(rootDir, { base, predicates: preds, runTests: process.env.RUNE_ALLOW_TEST_EXEC === "1" });
         return { overall: overallOf(r), report: formatReport(r), details: r };
       },
     },

@@ -8,6 +8,7 @@ const SPECS = {
   route_exists: { req: ['routePath'], opt: [] },
   no_remaining_references: { req: ['entity'], opt: [] },
   file_changed: { req: ['file'], opt: [] },
+  test_fixed: { req: ['file'], opt: [] },
 };
 
 const SYSTEM = [
@@ -17,7 +18,7 @@ const SYSTEM = [
   'Use null when a claim is about behavior, performance, bugs, intent, or anything not checkable from code structure.',
   'Predicate types and fields:',
   '  import_removed {target, file?}  import_added {target, file?}  fact_removed {entity, type?, file?}',
-  '  route_exists {routePath}  no_remaining_references {entity}  file_changed {file}',
+  '  route_exists {routePath}  no_remaining_references {entity}  file_changed {file}  test_fixed {file: a test file the claim names as proof}',
   'Use only file paths and names that appear in the claim text. Never invent them; omit optional fields instead.',
 ].join('\n');
 

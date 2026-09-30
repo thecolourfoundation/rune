@@ -1,4 +1,4 @@
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -57,7 +57,73 @@ function dependentsOf(changedFiles, dir, beforeG, afterG) {
   };
 }
 
-export async function runAfter(dir, { base = 'HEAD', predicates = [] } = {}) {
+const CODE_EXT = /\.(?:[cm]?[jt]sx?)$/;
+const DOC_EXT = /\.(?:md|txt|rst)$/i;
+
+// import(x) / require(x) with a non-literal argument cannot be resolved statically.
+function findDynamicRefs(dir, changedFiles) {
+  const out = [];
+  const literal = /^\s*(?:'[^']*'|"[^"]*"|`[^`$]*`)\s*$/;
+  for (const f of changedFiles) {
+    if (!CODE_EXT.test(f)) continue;
+    let src;
+    try { src = fs.readFileSync(path.join(dir, f), 'utf8'); } catch { continue; }
+    const call = /\b(?:require|import)\s*\(\s*([^)]*)\)/g;
+    let m;
+    while ((m = call.exec(src))) {
+      if (!m[1].trim() || literal.test(m[1])) continue;
+      out.push(`${f}:${src.slice(0, m.index).split('\n').length}`);
+    }
+  }
+  return out;
+}
+
+// Returns matches outside docs, [] for none, null if the search itself failed.
+function makeTextSearch(dir) {
+  return (needle) => {
+    if (typeof needle !== 'string' || !needle.trim()) return [];
+    let out;
+    try {
+      out = execFileSync('git', ['grep', '-n', '-I', '-F', '-w', '--untracked', '-e', needle],
+        { cwd: dir, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
+    } catch (e) {
+      if (e.status === 1) return [];
+      return null;
+    }
+    return out.split('\n').filter(Boolean).map((line) => {
+      const m = /^(.*?):(\d+):/.exec(line);
+      return m ? { file: m[1], line: Number(m[2]), type: 'text_match' } : null;
+    }).filter((x) => x && !DOC_EXT.test(x.file));
+  };
+}
+
+// Runs `node --test <file>` in the base worktree ('before') or the working tree ('after').
+// The file is copied into the base worktree so a test added by the agent can fail there.
+function makeRunTest(dir, wt) {
+  return (file, where) => {
+    if (typeof file !== 'string' || !file || file.startsWith('-') || path.isAbsolute(file) || file.split(/[\\/]/).includes('..')) {
+      return { ran: false, passed: false, note: 'invalid test path' };
+    }
+    const src = path.join(dir, file);
+    if (!fs.existsSync(src)) return { ran: false, passed: false, note: 'test file does not exist' };
+    let cwd = dir;
+    if (where === 'before') {
+      cwd = wt;
+      const dst = path.join(wt, file);
+      fs.mkdirSync(path.dirname(dst), { recursive: true });
+      fs.copyFileSync(src, dst);
+      const nm = path.join(wt, 'node_modules');
+      if (fs.existsSync(path.join(dir, 'node_modules')) && !fs.existsSync(nm)) {
+        fs.symlinkSync(path.join(dir, 'node_modules'), nm, 'dir');
+      }
+    }
+    const r = spawnSync(process.execPath, ['--test', file], { cwd, encoding: 'utf8', timeout: 120000 });
+    if (r.error || r.status === null) return { ran: false, passed: false, note: r.error ? r.error.message : 'timed out' };
+    return { ran: true, passed: r.status === 0 };
+  };
+}
+
+export async function runAfter(dir, { base = 'HEAD', predicates = [], runTests = false } = {}) {
   const wt = fs.mkdtempSync(path.join(os.tmpdir(), 'rune-base-'));
   fs.rmSync(wt, { recursive: true, force: true });
   git(dir, 'worktree', 'add', '--detach', wt, base);
@@ -66,15 +132,18 @@ export async function runAfter(dir, { base = 'HEAD', predicates = [] } = {}) {
     const afterG = await buildGraph(dir);
     const changedFiles = changedFilesOf(dir, base);
     const { unparsedFiles, projectWarnings } = warningsOf(afterG);
+    const dynamicRefs = findDynamicRefs(dir, changedFiles);
     const results = evaluateAll(predicates, {
       before: beforeG.facts, after: afterG.facts, changedFiles, unparsedFiles,
+      textSearch: makeTextSearch(dir),
+      runTest: runTests ? makeRunTest(dir, wt) : null,
     });
     const unclaimed = unclaimedOf(computeDelta(beforeG.facts, afterG.facts), predicates);
     const { unreviewedDependents, impactErrors } = dependentsOf(changedFiles, dir, beforeG, afterG);
     const contradicted = results.filter((r) => r.verdict === 'contradicted').length;
     return {
       base, changedFiles: [...changedFiles], results, unclaimed,
-      unreviewedDependents, impactErrors,
+      unreviewedDependents, impactErrors, dynamicRefs,
       unparsedFiles: [...unparsedFiles],
       projectWarnings: projectWarnings.map((w) => `${w.extractor ?? '?'}: ${w.error}`),
       exitCode: contradicted ? 1 : 0,
@@ -95,7 +164,7 @@ export function overallOf(r) {
   if (un) reasons.push(`${un} change(s) no claim covers`);
   const sd = r.unreviewedDependents.filter((d) => !d.isTest).length;
   if (sd) reasons.push(`${sd} dependent source file(s) not reviewed`);
-  if (r.unparsedFiles.length || r.projectWarnings.length || r.impactErrors.length) reasons.push('coverage gaps');
+  if (r.unparsedFiles.length || r.projectWarnings.length || r.impactErrors.length || r.dynamicRefs?.length) reasons.push('coverage gaps');
   return reasons.length
     ? { level: 'REVIEW', reasons }
     : { level: 'ACCEPT', reasons: ['all claims supported; no uncovered changes or gaps'] };
@@ -145,5 +214,6 @@ export function formatReport(r) {
   if (r.unparsedFiles.length) L.push('', `Coverage caveat: failed to fully parse: ${r.unparsedFiles.join(', ')}`);
   if (r.projectWarnings.length) L.push('', `Coverage caveat: project-level extractor failure(s): ${r.projectWarnings.join('; ')}`);
   if (r.impactErrors.length) L.push('', `Impact could not be computed for: ${r.impactErrors.join('; ')}`);
+  if (r.dynamicRefs?.length) L.push('', `Coverage caveat: dynamic import/require in changed files, references not fully tracked: ${r.dynamicRefs.slice(0, 5).join(', ')}`);
   return L.join('\n');
 }

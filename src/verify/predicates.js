@@ -38,13 +38,30 @@ function noRemainingRefs(p, ctx) {
     return V('unverifiable', 'entity never appeared in the before-graph; cannot show references were removed');
   const refs = ctx.after.filter((f) => isRef(f, p.entity));
   if (refs.length) return V('contradicted', `${refs.length} reference(s) remain`, refs);
-  return V('supported', 'no structural references remain (string/dynamic references are not tracked)');
+  const text = ctx.textSearch ? ctx.textSearch(p.entity) : [];
+  if (text === null) return V('unverifiable', 'text search failed; cannot rule out string or dynamic references');
+  if (text.length) {
+    return V('unverifiable',
+      `no structural references remain, but ${text.length} textual mention(s) exist in non-doc files (possible string or dynamic reference)`, text);
+  }
+  return V('supported', 'no structural or textual references remain outside docs');
 }
 
 function fileChanged(p, ctx) {
   return ctx.changedFiles?.has(p.file)
     ? V('supported', 'file appears in the diff')
     : V('contradicted', 'file not in the diff');
+}
+
+function testFixed(p, ctx) {
+  if (!ctx.runTest) return V('unverifiable', 'test execution is not enabled (CLI: --run-tests; MCP server: set RUNE_ALLOW_TEST_EXEC=1)');
+  const after = ctx.runTest(p.file, 'after');
+  if (!after.ran) return V('unverifiable', `test could not be run: ${after.note ?? 'unknown'}`);
+  if (!after.passed) return V('contradicted', 'test fails after the change');
+  const before = ctx.runTest(p.file, 'before');
+  if (!before.ran) return V('unverifiable', `test could not be run at the base: ${before.note ?? 'unknown'}`);
+  if (before.passed) return V('unverifiable', 'test also passes at the base, so it does not demonstrate a fix');
+  return V('supported', 'test fails at the base and passes after the change');
 }
 
 const EVAL = {
@@ -54,6 +71,7 @@ const EVAL = {
   route_exists: routeExists,
   no_remaining_references: noRemainingRefs,
   file_changed: fileChanged,
+  test_fixed: testFixed,
   unmapped: () => V('unverifiable', 'claim cannot be expressed as a structural check (behavior and intent are not verified)'),
 };
 
