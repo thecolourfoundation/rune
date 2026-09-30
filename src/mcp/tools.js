@@ -4,6 +4,8 @@ import { verifyFact, verifyFacts } from "../graph/verify.js";
 import { runAgentLoop, widenForDeepInvestigation } from "../agent/loop.js";
 import { budgetReport } from "../agent/budget.js";
 import { investigateDeep } from "../llm/investigate.js";
+import { runAfter, formatReport, overallOf } from "../verify/after.js";
+import { translateClaims, validatePredicate } from "../verify/translate.js";
 
 const emptySchema = {};
 
@@ -199,6 +201,35 @@ export function buildTools(getGraph, rootDir) {
       handler: async () => {
         const graph = getGraph();
         return verifyFacts(graph.facts, rootDir);
+      },
+    },
+    {
+      name: "rune_after",
+      title: "Verify a change (Rune Review)",
+      description:
+        "Call this AFTER you edit code, with the claims you are about to make (for example 'I removed the lodash import from a.js'). Rune re-scans, diffs against the base ref, and independently checks each claim against the code: SUPPORTED, CONTRADICTED, or UNVERIFIABLE. It also lists changes no claim covers and dependents/tests you did not review. Returns an overall ACCEPT / REVIEW / REJECT. Behavioral claims (bug fixed, faster) are reported UNVERIFIABLE, never as passing.",
+      inputSchema: {
+        claims: z.array(z.string().min(1).max(500)).max(50).optional().describe("Plain-text claims about what you changed. Translated to structural checks by the configured model."),
+        predicates: z.array(z.record(z.string(), z.any())).max(50).optional().describe("Pre-translated structural predicates, used when no model is configured."),
+        base: z.string().max(100).optional().describe("Git ref to compare against. Defaults to HEAD."),
+      },
+      handler: async ({ claims = [], predicates = [], base = "HEAD" }) => {
+        if (!/^[A-Za-z0-9_][A-Za-z0-9_.\/~^@{}-]*$/.test(base)) throw new Error("invalid base ref");
+        const preds = [];
+        for (const p of predicates) {
+          const claim = typeof p?.claim === "string" && p.claim ? p.claim : String(p?.type ?? "predicate");
+          const v = validatePredicate(p);
+          preds.push(v ? { claim, ...v } : { claim, type: "unmapped" });
+        }
+        if (claims.length) {
+          const t = await translateClaims(claims, { env: process.env });
+          if (t.skipped) {
+            throw new Error(`cannot check claims: ${t.skipped} Alternatively pass pre-translated 'predicates'.`);
+          }
+          preds.push(...t.predicates);
+        }
+        const r = await runAfter(rootDir, { base, predicates: preds });
+        return { overall: overallOf(r), report: formatReport(r), details: r };
       },
     },
     {
