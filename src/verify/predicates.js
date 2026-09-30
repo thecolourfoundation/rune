@@ -34,6 +34,8 @@ function routeExists(p, ctx) {
 }
 
 function noRemainingRefs(p, ctx) {
+  if (!ctx.before.some((f) => isRef(f, p.entity)))
+    return V('unverifiable', 'entity never appeared in the before-graph; cannot show references were removed');
   const refs = ctx.after.filter((f) => isRef(f, p.entity));
   if (refs.length) return V('contradicted', `${refs.length} reference(s) remain`, refs);
   return V('supported', 'no structural references remain (string/dynamic references are not tracked)');
@@ -52,6 +54,7 @@ const EVAL = {
   route_exists: routeExists,
   no_remaining_references: noRemainingRefs,
   file_changed: fileChanged,
+  unmapped: () => V('unverifiable', 'claim cannot be expressed as a structural check (behavior and intent are not verified)'),
 };
 
 export function evaluate(pred, ctx) {
