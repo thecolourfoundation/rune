@@ -4,12 +4,14 @@ import os from 'node:os';
 import path from 'node:path';
 import { buildGraph } from '../graph/build.js';
 import { computeDelta } from '../graph/delta.js';
+import { computeImpact } from '../graph/impact.js';
 import { evaluateAll } from './predicates.js';
 
 const git = (cwd, ...args) =>
   execFileSync('git', args, { cwd, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
 
 const ent = (f) => f.entity ?? f.name ?? f.target ?? f.callee ?? f.routePath;
+const PROJECT = '(project-level)';
 
 function changedFilesOf(dir, base) {
   const tracked = git(dir, 'diff', '--name-only', base).split('\n');
@@ -17,12 +19,12 @@ function changedFilesOf(dir, base) {
   return new Set([...tracked, ...untracked].filter(Boolean));
 }
 
-// Best-effort: files the scanner flagged as failed. Shape of scanWarnings is
-// verified in Cell 9; entries without a file are ignored here.
-function unparsedFilesOf(graph) {
-  const out = new Set();
-  for (const w of graph.scanWarnings ?? []) if (w && typeof w === 'object' && w.file) out.add(w.file);
-  return out;
+function warningsOf(graph) {
+  const ws = (graph.scanWarnings ?? []).filter((w) => w && typeof w === 'object');
+  return {
+    unparsedFiles: new Set(ws.filter((w) => w.file && w.file !== PROJECT).map((w) => w.file)),
+    projectWarnings: ws.filter((w) => w.file === PROJECT),
+  };
 }
 
 function unclaimedOf(delta, preds) {
@@ -32,20 +34,49 @@ function unclaimedOf(delta, preds) {
   return { added: delta.added.filter(unclaimed), removed: delta.removed.filter(unclaimed) };
 }
 
+// Dependents of changed files that were NOT themselves changed. Deleted files
+// use the before-graph so anything still importing them is surfaced.
+function dependentsOf(changedFiles, dir, beforeG, afterG) {
+  const by = new Map();
+  const errors = [];
+  for (const f of changedFiles) {
+    const g = fs.existsSync(path.join(dir, f)) ? afterG : beforeG;
+    let imp;
+    try { imp = computeImpact(g, f); } catch (e) { errors.push(`${f}: ${e.message}`); continue; }
+    for (const d of imp?.dependents ?? []) {
+      if (changedFiles.has(d.file)) continue;
+      if (!by.has(d.file)) by.set(d.file, new Set());
+      by.get(d.file).add(f);
+    }
+  }
+  return {
+    unreviewedDependents: [...by].map(([file, s]) => ({ file, dependsOn: [...s].sort() })),
+    impactErrors: errors,
+  };
+}
+
 export async function runAfter(dir, { base = 'HEAD', predicates = [] } = {}) {
   const wt = fs.mkdtempSync(path.join(os.tmpdir(), 'rune-base-'));
   fs.rmSync(wt, { recursive: true, force: true });
   git(dir, 'worktree', 'add', '--detach', wt, base);
   try {
-    const before = await buildGraph(wt);
-    const after = await buildGraph(dir);
+    const beforeG = await buildGraph(wt);
+    const afterG = await buildGraph(dir);
     const changedFiles = changedFilesOf(dir, base);
-    const unparsedFiles = unparsedFilesOf(after);
-    const results = evaluateAll(predicates, { before: before.facts, after: after.facts, changedFiles, unparsedFiles });
-    const delta = computeDelta(before.facts, after.facts);
-    const unclaimed = unclaimedOf(delta, predicates);
+    const { unparsedFiles, projectWarnings } = warningsOf(afterG);
+    const results = evaluateAll(predicates, {
+      before: beforeG.facts, after: afterG.facts, changedFiles, unparsedFiles,
+    });
+    const unclaimed = unclaimedOf(computeDelta(beforeG.facts, afterG.facts), predicates);
+    const { unreviewedDependents, impactErrors } = dependentsOf(changedFiles, dir, beforeG, afterG);
     const contradicted = results.filter((r) => r.verdict === 'contradicted').length;
-    return { base, changedFiles: [...changedFiles], results, unclaimed, unparsedFiles: [...unparsedFiles], exitCode: contradicted ? 1 : 0 };
+    return {
+      base, changedFiles: [...changedFiles], results, unclaimed,
+      unreviewedDependents, impactErrors,
+      unparsedFiles: [...unparsedFiles],
+      projectWarnings: projectWarnings.map((w) => `${w.extractor ?? '?'}: ${w.error}`),
+      exitCode: contradicted ? 1 : 0,
+    };
   } finally {
     try { git(dir, 'worktree', 'remove', '--force', wt); } catch {}
   }
@@ -53,6 +84,8 @@ export async function runAfter(dir, { base = 'HEAD', predicates = [] } = {}) {
 
 const loc = (f) => `${f.file}:${f.line ?? '?'}`;
 const label = (f) => `${f.type} ${ent(f)} (${loc(f)})`;
+const CAP = 10;
+const more = (total) => (total > CAP ? [`  ... and ${total - CAP} more`] : []);
 
 export function formatReport(r) {
   const L = [`rune after — base ${r.base}, ${r.changedFiles.length} file(s) changed`, ''];
@@ -63,9 +96,18 @@ export function formatReport(r) {
   const { added, removed } = r.unclaimed;
   if (added.length + removed.length) {
     L.push('', 'Changes no claim covers:');
-    for (const f of removed.slice(0, 10)) L.push(`  - removed ${label(f)}`);
-    for (const f of added.slice(0, 10)) L.push(`  + added   ${label(f)}`);
+    for (const f of removed.slice(0, CAP)) L.push(`  - removed ${label(f)}`);
+    L.push(...more(removed.length));
+    for (const f of added.slice(0, CAP)) L.push(`  + added   ${label(f)}`);
+    L.push(...more(added.length));
+  }
+  if (r.unreviewedDependents.length) {
+    L.push('', 'Depend on changed files but were not changed (unreviewed):');
+    for (const d of r.unreviewedDependents.slice(0, CAP)) L.push(`  ? ${d.file}  <- ${d.dependsOn.join(', ')}`);
+    L.push(...more(r.unreviewedDependents.length));
   }
   if (r.unparsedFiles.length) L.push('', `Coverage caveat: failed to fully parse: ${r.unparsedFiles.join(', ')}`);
+  if (r.projectWarnings.length) L.push('', `Coverage caveat: project-level extractor failure(s): ${r.projectWarnings.join('; ')}`);
+  if (r.impactErrors.length) L.push('', `Impact could not be computed for: ${r.impactErrors.join('; ')}`);
   return L.join('\n');
 }

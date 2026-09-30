@@ -31,3 +31,17 @@ test('after: true claim, false claim, and an unclaimed change', async () => {
   assert.equal(r.exitCode, 1);
   assert.ok(r.unclaimed.added.some((f) => f.target === 'chalk'), 'chalk import surfaces as unclaimed');
 });
+
+test('after: untouched dependent of a changed file is surfaced', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'rune-dep-'));
+  git(dir, 'init', '-q');
+  fs.writeFileSync(path.join(dir, 'a.js'), 'export const x = 1;\n');
+  fs.writeFileSync(path.join(dir, 'b.js'), 'import { x } from "./a.js";\nexport const y = x + 1;\n');
+  git(dir, 'add', '-A'); git(dir, 'commit', '-qm', 'base');
+  fs.writeFileSync(path.join(dir, 'a.js'), 'export const x = 2;\n');
+
+  const r = await runAfter(dir, { base: 'HEAD', predicates: [] });
+  const dep = r.unreviewedDependents.find((d) => d.file === 'b.js');
+  assert.ok(dep, 'b.js should be listed as an unreviewed dependent');
+  assert.deepEqual(dep.dependsOn, ['a.js']);
+});
