@@ -61,7 +61,7 @@ const fixedClaim = [{ claim: 'fixed x (t.test.js proves it)', type: 'test_fixed'
 
 test('test_fixed: supported when the test fails at base and passes after', async () => {
   const r = await runAfter(testRepo(), { base: 'HEAD', predicates: fixedClaim, runTests: true });
-  assert.equal(r.results[0].verdict, 'supported');
+  assert.equal(r.results[0].verdict, 'supported', r.results[0].reason);
 });
 
 test('test_fixed: test execution is off by default', async () => {

@@ -117,7 +117,10 @@ function makeRunTest(dir, wt) {
         fs.symlinkSync(path.join(dir, 'node_modules'), nm, 'dir');
       }
     }
-    const r = spawnSync(process.execPath, ['--test', file], { cwd, encoding: 'utf8', timeout: 120000 });
+    // An outer `node --test` sets NODE_TEST_CONTEXT; inheriting it makes a nested run
+    // report success even when the test fails.
+    const { NODE_TEST_CONTEXT, ...cleanEnv } = process.env;
+    const r = spawnSync(process.execPath, ['--test', file], { cwd, encoding: 'utf8', timeout: 120000, env: cleanEnv });
     if (r.error || r.status === null) return { ran: false, passed: false, note: r.error ? r.error.message : 'timed out' };
     return { ran: true, passed: r.status === 0 };
   };
