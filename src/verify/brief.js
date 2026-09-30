@@ -1,5 +1,6 @@
 import { buildGraph } from '../graph/build.js';
 import { runBefore } from './before.js';
+import { approvedFailures } from './attempts.js';
 import { listProjectMemory, listExperience } from '../memory/memory.js';
 
 const asArray = (x) => (Array.isArray(x) ? x : x?.items ?? []);
@@ -56,7 +57,10 @@ export async function buildBrief(dir, files, { task = null, maxChars = 6000, mem
   if (notApproved > 0) ruleLines.push(`  (${notApproved} unapproved rule(s) not included)`);
   if (!mem.ok) ruleLines.push(`  (stored memory could not be read: ${mem.error})`);
 
-  const failed = mem.experience.filter((e) => FAIL.test(String(e?.outcome ?? '')));
+  const failed = [
+    ...mem.experience.filter((e) => FAIL.test(String(e?.outcome ?? ''))),
+    ...approvedFailures(dir).map((x) => ({ taskDescription: x.task, strategyUsed: x.strategy, outcome: 'failed' })),
+  ];
   const failLines = [];
   if (failed.length) {
     failLines.push('Approaches that failed before (do not repeat blindly):');

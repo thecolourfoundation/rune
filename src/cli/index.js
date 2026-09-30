@@ -1,3 +1,4 @@
+import { cmdTried, cmdAttempts, cmdHypothesize } from "../verify/learn-cmd.js";
 import { cmdBrief, cmdContradictions } from "../verify/brief-cmd.js";
 import { cmdBefore, cmdLedger } from "../verify/before-cmd.js";
 import { cmdAfter } from "../verify/after-cmd.js";
@@ -78,6 +79,12 @@ export async function runCli(args) {
       return cmdBrief(rest);
     case "contradictions":
       return cmdContradictions(rest);
+    case "tried":
+      return cmdTried(rest);
+    case "attempts":
+      return cmdAttempts(rest);
+    case "hypothesize":
+      return cmdHypothesize(rest);
     case "before":
       return cmdBefore(rest);
     case "ledger":

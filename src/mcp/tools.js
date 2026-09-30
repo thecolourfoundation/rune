@@ -8,6 +8,8 @@ import { runAfter, formatReport, overallOf } from "../verify/after.js";
 import { translateClaims, validatePredicate } from "../verify/translate.js";
 import { runBefore, formatBefore } from "../verify/before.js";
 import { appendReview } from "../verify/ledger.js";
+import { proposeAttempt } from "../verify/attempts.js";
+import { generateHypotheses, formatHypotheses } from "../verify/hypotheses.js";
 import { buildBrief } from "../verify/brief.js";
 
 const emptySchema = {};
@@ -260,6 +262,32 @@ export function buildTools(getGraph, rootDir) {
       handler: async ({ files, task }) => {
         const b = await buildBrief(rootDir, files, { task });
         return { brief: b.text, truncated: b.truncated, details: b.details };
+      },
+    },
+    {
+      name: "rune_hypothesize",
+      title: "Competing explanations for a problem",
+      description:
+        "Give Rune a bug or question. It returns 2 to 4 competing, UNVERIFIED explanations, each citing evidence from the code graph, with what to inspect to confirm or rule each out. Explanations without valid evidence are discarded. Needs a configured model.",
+      inputSchema: { problem: z.string().min(3).max(400).describe("Describe the problem; name a file, function or route so Rune can find evidence") },
+      handler: async ({ problem }) => {
+        const h = await generateHypotheses(rootDir, problem);
+        if (h.skipped) throw new Error(h.skipped);
+        return { report: formatHypotheses(h), details: h };
+      },
+    },
+    {
+      name: "rune_propose_failed_approach",
+      title: "Propose a failed approach",
+      description:
+        "Record an approach that did NOT work, so future agents avoid repeating it. It is stored as PROPOSED and only appears in briefs after the project owner approves it; you cannot approve it yourself.",
+      inputSchema: {
+        task: z.string().min(1).max(200).describe("What you were trying to do"),
+        strategy: z.string().min(1).max(300).describe("The approach that failed, and why"),
+      },
+      handler: async ({ task, strategy }) => {
+        const { item, created } = proposeAttempt(rootDir, { task, strategy, source: 'agent' });
+        return { id: item.id, status: item.status, created, note: 'awaiting owner approval; not shown in briefs until approved' };
       },
     },
     {
