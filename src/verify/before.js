@@ -7,12 +7,12 @@ import { isTestFile, findDynamicRefs } from './after.js';
 const CAP = 10;
 const more = (n) => (n > CAP ? [`  ... and ${n - CAP} more`] : []);
 
-export async function runBefore(dir, file) {
+export async function runBefore(dir, file, graph) {
   if (typeof file !== 'string' || !file || path.isAbsolute(file) || file.split(/[\\/]/).includes('..')) {
     throw new Error('file must be a relative path inside the project');
   }
   const rel = path.normalize(file).split(path.sep).join('/');
-  const g = await buildGraph(dir);
+  const g = graph ?? await buildGraph(dir);
   const facts = g.facts.filter((f) => f.file === rel);
   if (!facts.length && !fs.existsSync(path.join(dir, rel))) throw new Error(`file not found in project: ${rel}`);
 

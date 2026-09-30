@@ -8,6 +8,7 @@ import { runAfter, formatReport, overallOf } from "../verify/after.js";
 import { translateClaims, validatePredicate } from "../verify/translate.js";
 import { runBefore, formatBefore } from "../verify/before.js";
 import { appendReview } from "../verify/ledger.js";
+import { buildBrief } from "../verify/brief.js";
 
 const emptySchema = {};
 
@@ -245,6 +246,20 @@ export function buildTools(getGraph, rootDir) {
       handler: async ({ file }) => {
         const details = await runBefore(rootDir, file);
         return { report: formatBefore(details), details };
+      },
+    },
+    {
+      name: "rune_brief",
+      title: "Agent brief",
+      description:
+        "Call once at the START of a task, with the files you plan to change. Returns a compact, evidence-backed brief: dependents to review, tests to run, security findings, approved project rules, approaches that failed before, and what Rune cannot tell you.",
+      inputSchema: {
+        files: z.array(z.string().min(1).max(500)).min(1).max(5).describe("Project-relative paths you plan to change"),
+        task: z.string().max(300).optional().describe("One-line description of the task"),
+      },
+      handler: async ({ files, task }) => {
+        const b = await buildBrief(rootDir, files, { task });
+        return { brief: b.text, truncated: b.truncated, details: b.details };
       },
     },
     {

@@ -1,3 +1,4 @@
+import { cmdBrief, cmdContradictions } from "../verify/brief-cmd.js";
 import { cmdBefore, cmdLedger } from "../verify/before-cmd.js";
 import { cmdAfter } from "../verify/after-cmd.js";
 import path from "node:path";
@@ -73,6 +74,10 @@ export async function runCli(args) {
       return cmdServe(rest);
     case "explain":
       return cmdExplain(rest);
+    case "brief":
+      return cmdBrief(rest);
+    case "contradictions":
+      return cmdContradictions(rest);
     case "before":
       return cmdBefore(rest);
     case "ledger":
