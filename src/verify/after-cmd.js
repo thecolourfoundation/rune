@@ -1,10 +1,11 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { runAfter, formatReport, overallOf } from './after.js';
+import { appendReview } from './ledger.js';
 import { translateClaims } from './translate.js';
 
 export async function cmdAfter(rest) {
-  let base = 'HEAD', claimsFile = null, dir = '.', json = false, strict = false, runTests = false;
+  let base = 'HEAD', claimsFile = null, dir = '.', json = false, strict = false, runTests = false, ledger = false;
   const texts = [];
   for (let i = 0; i < rest.length; i++) {
     const a = rest[i];
@@ -16,6 +17,7 @@ export async function cmdAfter(rest) {
       texts.push(...fs.readFileSync(f === '-' ? 0 : f, 'utf8').split('\n').map((s) => s.trim()).filter(Boolean));
     } else if (a === '--json') json = true;
     else if (a === '--strict') strict = true;
+    else if (a === '--ledger') ledger = true;
     else if (a === '--run-tests') runTests = true;
     else if (!a.startsWith('--')) dir = a;
   }
@@ -31,6 +33,7 @@ export async function cmdAfter(rest) {
   }
   const r = await runAfter(path.resolve(dir), { base, predicates, runTests });
   const o = overallOf(r);
+  if (ledger || process.env.RUNE_LEDGER === '1') appendReview(path.resolve(dir), r, o);
   console.log(json ? JSON.stringify({ ...r, overall: o }, null, 2) : formatReport(r));
   process.exitCode = o.level === 'REJECT' || (strict && o.level !== 'ACCEPT') ? 1 : 0;
 }

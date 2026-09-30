@@ -6,6 +6,8 @@ import { budgetReport } from "../agent/budget.js";
 import { investigateDeep } from "../llm/investigate.js";
 import { runAfter, formatReport, overallOf } from "../verify/after.js";
 import { translateClaims, validatePredicate } from "../verify/translate.js";
+import { runBefore, formatBefore } from "../verify/before.js";
+import { appendReview } from "../verify/ledger.js";
 
 const emptySchema = {};
 
@@ -229,7 +231,20 @@ export function buildTools(getGraph, rootDir) {
           preds.push(...t.predicates);
         }
         const r = await runAfter(rootDir, { base, predicates: preds, runTests: process.env.RUNE_ALLOW_TEST_EXEC === "1" });
-        return { overall: overallOf(r), report: formatReport(r), details: r };
+        const overall = overallOf(r);
+        if (process.env.RUNE_LEDGER === "1") appendReview(rootDir, r, overall);
+        return { overall, report: formatReport(r), details: r };
+      },
+    },
+    {
+      name: "rune_before",
+      title: "What to know before changing a file",
+      description:
+        "Call this BEFORE editing a file. Returns what Rune knows about it: what it imports, which source files depend on it, which tests to run afterwards, security findings, and an explicit list of what Rune cannot tell you (dynamic imports, parse failures, static-only dependents).",
+      inputSchema: { file: z.string().min(1).max(500).describe("Project-relative path of the file you plan to change") },
+      handler: async ({ file }) => {
+        const details = await runBefore(rootDir, file);
+        return { report: formatBefore(details), details };
       },
     },
     {

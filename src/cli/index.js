@@ -1,3 +1,4 @@
+import { cmdBefore, cmdLedger } from "../verify/before-cmd.js";
 import { cmdAfter } from "../verify/after-cmd.js";
 import path from "node:path";
 import fs from "node:fs";
@@ -72,6 +73,10 @@ export async function runCli(args) {
       return cmdServe(rest);
     case "explain":
       return cmdExplain(rest);
+    case "before":
+      return cmdBefore(rest);
+    case "ledger":
+      return cmdLedger(rest);
     case "review":
     case "after":
       return cmdAfter(rest);

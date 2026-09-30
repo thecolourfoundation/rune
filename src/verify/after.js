@@ -16,7 +16,7 @@ const PROJECT = '(project-level)';
 function changedFilesOf(dir, base) {
   const tracked = git(dir, 'diff', '--name-only', base).split('\n');
   const untracked = git(dir, 'ls-files', '--others', '--exclude-standard').split('\n');
-  return new Set([...tracked, ...untracked].filter(Boolean));
+  return new Set([...tracked, ...untracked].filter((f) => f && !f.startsWith('.rune/')));
 }
 
 function warningsOf(graph) {
@@ -34,7 +34,7 @@ function unclaimedOf(delta, preds) {
   return { added: delta.added.filter(unclaimed), removed: delta.removed.filter(unclaimed) };
 }
 
-const isTestFile = (f) => /(^|\/)(tests?|__tests__)\//.test(f) || /\.(test|spec)\.[cm]?[jt]sx?$/.test(f);
+export const isTestFile = (f) => /(^|\/)(tests?|__tests__)\//.test(f) || /\.(test|spec)\.[cm]?[jt]sx?$/.test(f);
 
 // Dependents of changed files that were NOT themselves changed. Deleted files
 // use the before-graph so anything still importing them is surfaced.
@@ -61,7 +61,7 @@ const CODE_EXT = /\.(?:[cm]?[jt]sx?)$/;
 const DOC_EXT = /\.(?:md|txt|rst)$/i;
 
 // import(x) / require(x) with a non-literal argument cannot be resolved statically.
-function findDynamicRefs(dir, changedFiles) {
+export function findDynamicRefs(dir, changedFiles) {
   const out = [];
   const literal = /^\s*(?:'[^']*'|"[^"]*"|`[^`$]*`)\s*$/;
   for (const f of changedFiles) {
@@ -84,7 +84,7 @@ function makeTextSearch(dir) {
     if (typeof needle !== 'string' || !needle.trim()) return [];
     let out;
     try {
-      out = execFileSync('git', ['grep', '-n', '-I', '-F', '-w', '--untracked', '-e', needle],
+      out = execFileSync('git', ['grep', '-n', '-I', '-F', '-w', '--untracked', '-e', needle, '--', ':(exclude).rune'],
         { cwd: dir, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
     } catch (e) {
       if (e.status === 1) return [];
