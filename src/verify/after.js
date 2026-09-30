@@ -84,24 +84,51 @@ export async function runAfter(dir, { base = 'HEAD', predicates = [] } = {}) {
   }
 }
 
+export function overallOf(r) {
+  const c = r.results.filter((x) => x.verdict === 'contradicted').length;
+  const u = r.results.filter((x) => x.verdict === 'unverifiable').length;
+  if (c) return { level: 'REJECT', reasons: [`${c} claim(s) contradicted by the code`] };
+  const reasons = [];
+  if (!r.results.length) reasons.push('no claims were checked');
+  if (u) reasons.push(`${u} claim(s) cannot be verified structurally`);
+  const un = r.unclaimed.added.length + r.unclaimed.removed.length;
+  if (un) reasons.push(`${un} change(s) no claim covers`);
+  const sd = r.unreviewedDependents.filter((d) => !d.isTest).length;
+  if (sd) reasons.push(`${sd} dependent source file(s) not reviewed`);
+  if (r.unparsedFiles.length || r.projectWarnings.length || r.impactErrors.length) reasons.push('coverage gaps');
+  return reasons.length
+    ? { level: 'REVIEW', reasons }
+    : { level: 'ACCEPT', reasons: ['all claims supported; no uncovered changes or gaps'] };
+}
+
+function groupLines(list, sign) {
+  const by = new Map();
+  for (const f of list) {
+    if (!by.has(f.file)) by.set(f.file, new Map());
+    const m = by.get(f.file);
+    m.set(f.type, (m.get(f.type) ?? 0) + 1);
+  }
+  return [...by].map(([file, m]) => `  ${file}: ` + [...m].map(([t, n]) => `${sign}${n} ${t}`).join(', '));
+}
+
 const loc = (f) => `${f.file}:${f.line ?? '?'}`;
 const label = (f) => `${f.type} ${ent(f)} (${loc(f)})`;
 const CAP = 10;
 const more = (total) => (total > CAP ? [`  ... and ${total - CAP} more`] : []);
 
 export function formatReport(r) {
-  const L = [`rune after — base ${r.base}, ${r.changedFiles.length} file(s) changed`, ''];
+  const o = overallOf(r);
+  const L = [`RUNE REVIEW: ${o.level}`, ...o.reasons.map((x) => `  - ${x}`), '',
+    `base ${r.base}, ${r.changedFiles.length} file(s) changed`, ''];
   for (const x of r.results) {
     L.push(`[${x.verdict.toUpperCase()}] ${x.claim}`, `    ${x.reason}`);
     for (const e of x.evidence.slice(0, 3)) L.push(`    at ${loc(e)}`);
   }
   const { added, removed } = r.unclaimed;
   if (added.length + removed.length) {
-    L.push('', 'Changes no claim covers:');
-    for (const f of removed.slice(0, CAP)) L.push(`  - removed ${label(f)}`);
-    L.push(...more(removed.length));
-    for (const f of added.slice(0, CAP)) L.push(`  + added   ${label(f)}`);
-    L.push(...more(added.length));
+    L.push('', `Changes no claim covers (${added.length + removed.length}):`);
+    const rl = groupLines(removed, '-'), al = groupLines(added, '+');
+    L.push(...rl.slice(0, CAP), ...more(rl.length), ...al.slice(0, CAP), ...more(al.length));
   }
   const srcDeps = r.unreviewedDependents.filter((d) => !d.isTest);
   const testDeps = r.unreviewedDependents.filter((d) => d.isTest);

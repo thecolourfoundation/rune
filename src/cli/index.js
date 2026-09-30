@@ -72,6 +72,7 @@ export async function runCli(args) {
       return cmdServe(rest);
     case "explain":
       return cmdExplain(rest);
+    case "review":
     case "after":
       return cmdAfter(rest);
     case "verify":

@@ -1,10 +1,10 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { runAfter, formatReport } from './after.js';
+import { runAfter, formatReport, overallOf } from './after.js';
 import { translateClaims } from './translate.js';
 
 export async function cmdAfter(rest) {
-  let base = 'HEAD', claimsFile = null, dir = '.', json = false;
+  let base = 'HEAD', claimsFile = null, dir = '.', json = false, strict = false;
   const texts = [];
   for (let i = 0; i < rest.length; i++) {
     const a = rest[i];
@@ -15,6 +15,7 @@ export async function cmdAfter(rest) {
       const f = rest[++i];
       texts.push(...fs.readFileSync(f === '-' ? 0 : f, 'utf8').split('\n').map((s) => s.trim()).filter(Boolean));
     } else if (a === '--json') json = true;
+    else if (a === '--strict') strict = true;
     else if (!a.startsWith('--')) dir = a;
   }
   const predicates = claimsFile ? JSON.parse(fs.readFileSync(claimsFile === '-' ? 0 : claimsFile, 'utf8')) : [];
@@ -28,6 +29,7 @@ export async function cmdAfter(rest) {
     predicates.push(...t.predicates);
   }
   const r = await runAfter(path.resolve(dir), { base, predicates });
-  console.log(json ? JSON.stringify(r, null, 2) : formatReport(r));
-  process.exitCode = r.exitCode;
+  const o = overallOf(r);
+  console.log(json ? JSON.stringify({ ...r, overall: o }, null, 2) : formatReport(r));
+  process.exitCode = o.level === 'REJECT' || (strict && o.level !== 'ACCEPT') ? 1 : 0;
 }
