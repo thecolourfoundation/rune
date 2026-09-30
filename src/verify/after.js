@@ -34,6 +34,8 @@ function unclaimedOf(delta, preds) {
   return { added: delta.added.filter(unclaimed), removed: delta.removed.filter(unclaimed) };
 }
 
+const isTestFile = (f) => /(^|\/)(tests?|__tests__)\//.test(f) || /\.(test|spec)\.[cm]?[jt]sx?$/.test(f);
+
 // Dependents of changed files that were NOT themselves changed. Deleted files
 // use the before-graph so anything still importing them is surfaced.
 function dependentsOf(changedFiles, dir, beforeG, afterG) {
@@ -50,7 +52,7 @@ function dependentsOf(changedFiles, dir, beforeG, afterG) {
     }
   }
   return {
-    unreviewedDependents: [...by].map(([file, s]) => ({ file, dependsOn: [...s].sort() })),
+    unreviewedDependents: [...by].map(([file, s]) => ({ file, dependsOn: [...s].sort(), isTest: isTestFile(file) })),
     impactErrors: errors,
   };
 }
@@ -101,10 +103,17 @@ export function formatReport(r) {
     for (const f of added.slice(0, CAP)) L.push(`  + added   ${label(f)}`);
     L.push(...more(added.length));
   }
-  if (r.unreviewedDependents.length) {
-    L.push('', 'Depend on changed files but were not changed (unreviewed):');
-    for (const d of r.unreviewedDependents.slice(0, CAP)) L.push(`  ? ${d.file}  <- ${d.dependsOn.join(', ')}`);
-    L.push(...more(r.unreviewedDependents.length));
+  const srcDeps = r.unreviewedDependents.filter((d) => !d.isTest);
+  const testDeps = r.unreviewedDependents.filter((d) => d.isTest);
+  if (srcDeps.length) {
+    L.push('', 'Source files that depend on changed files but were not changed (unreviewed):');
+    for (const d of srcDeps.slice(0, CAP)) L.push(`  ? ${d.file}  <- ${d.dependsOn.join(', ')}`);
+    L.push(...more(srcDeps.length));
+  }
+  if (testDeps.length) {
+    L.push('', 'Tests to run (they import changed files):');
+    for (const d of testDeps.slice(0, CAP)) L.push(`  > ${d.file}`);
+    L.push(...more(testDeps.length));
   }
   if (r.unparsedFiles.length) L.push('', `Coverage caveat: failed to fully parse: ${r.unparsedFiles.join(', ')}`);
   if (r.projectWarnings.length) L.push('', `Coverage caveat: project-level extractor failure(s): ${r.projectWarnings.join('; ')}`);

@@ -45,3 +45,15 @@ test('after: untouched dependent of a changed file is surfaced', async () => {
   assert.ok(dep, 'b.js should be listed as an unreviewed dependent');
   assert.deepEqual(dep.dependsOn, ['a.js']);
 });
+
+test('after: dependent tests are flagged as tests, not source', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'rune-tst-'));
+  git(dir, 'init', '-q');
+  fs.mkdirSync(path.join(dir, 'test'));
+  fs.writeFileSync(path.join(dir, 'a.js'), 'export const x = 1;\n');
+  fs.writeFileSync(path.join(dir, 'test', 'a.test.js'), 'import { x } from "../a.js";\nexport const t = x;\n');
+  git(dir, 'add', '-A'); git(dir, 'commit', '-qm', 'base');
+  fs.writeFileSync(path.join(dir, 'a.js'), 'export const x = 2;\n');
+  const r = await runAfter(dir, { base: 'HEAD', predicates: [] });
+  assert.equal(r.unreviewedDependents.find((d) => d.file === 'test/a.test.js')?.isTest, true);
+});
